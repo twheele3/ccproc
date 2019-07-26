@@ -1,0 +1,61 @@
+---
+title: "CCProcessing Primer"
+output: html_notebook
+---
+
+##1) Load library and set working directory.
+
+```{r setup}
+library(ccproc)
+
+wd <- dirname(rstudioapi::getActiveDocumentContext()$path)
+knitr::opts_chunk$set(root.dir = dirname(rstudioapi::getActiveDocumentContext()$path))
+
+```
+
+##2) Set data directory and load file list.
+
+```{r set_directory}
+datadir <- "G:/Zeiss Confocal/Cellcounter Aggregation/cellcounter/New/"
+filenames <- list.files(datadir)
+files <- paste0(datadir,filenames)
+```
+
+##3) Load files into a new CellCounterDB object.
+
+```{r load_files}
+ccdb <- CellCounterDB$new(files)
+```
+
+##4) Process raw data into features (crypts)
+
+```{r feature_processing}
+ccdb$processFeatures()
+```
+
+##5) Tag attributes based on filenames.
+
+```{r tag_attributes}
+ccdb$tag_attribute(Regex="(TW[0-9]{2})",attribute="Sample")
+```
+
+##6) Verify feature detection with debug plots.
+
+```{r debug_plots}
+ccdb$plot_debug(levels(ccdb$cells$Image),savedir="G:/Zeiss Confocal/Cellcounter Aggregation/test/")
+```
+
+##7) Save database object to file.
+
+```{r save_db}
+ccdb$save(file="ccdb")
+```
+
+##8) Call cells from specific rows, according to specific features.
+
+```{r}
+index <- ccdb$which_cells(list("Sample" = "TW28", "Pos.Crypt" = 0:10, "Reg4-dsRed" = TRUE))
+print(ccdb$cells[index,])
+```
+
+
