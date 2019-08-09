@@ -224,6 +224,9 @@ files &lt;- paste0(datadir,filenames)</code></pre>
 <h2>5) Tag attributes based on filenames.</h2>
 <!-- rnb-text-end -->
 <!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuY2NkYiR0YWdfYXR0cmlidXRlKFJlZ2V4PVwiKFRXWzAtOV17Mn0pXCIsYXR0cmlidXRlPVwiU2FtcGxlXCIpXG5gYGAifQ== -->
+<pre class="r"><code>ccdb$tag_attribute(Regex=&quot;(TW[0-9]{2})&quot;,attribute=&quot;Sample&quot;)</code></pre>
+<!-- rnb-source-end -->
 <!-- rnb-chunk-end -->
 <!-- rnb-text-begin -->
 </div>
@@ -231,8 +234,11 @@ files &lt;- paste0(datadir,filenames)</code></pre>
 <h2>6) Verify feature detection with debug plots.</h2>
 <!-- rnb-text-end -->
 <!-- rnb-chunk-begin -->
-<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuY2NkYiRwbG90X2RlYnVnKGxldmVscyhjY2RiJGNlbGxzJEltYWdlKSxzYXZlZGlyPVwiRzovWmVpc3MgQ29uZm9jYWwvQ2VsbGNvdW50ZXIgQWdncmVnYXRpb24vdGVzdC9cIilcbmBgYCJ9 -->
-<pre class="r"><code>ccdb$plot_debug(levels(ccdb$cells$Image),savedir=&quot;G:/Zeiss Confocal/Cellcounter Aggregation/test/&quot;)</code></pre>
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuZm9yKGkgaW4gbGV2ZWxzKGNjZGIkY2VsbHMkSW1hZ2UpKXtcbiAgY2NkYiRwbG90X2RlYnVnKGksc2F2ZWRpcj1cIkc6L1plaXNzIENvbmZvY2FsL0NlbGxjb3VudGVyIEFnZ3JlZ2F0aW9uL3Rlc3QvXCIpXG4gIGdyYXBoaWNzLm9mZigpXG59XG5gYGAifQ== -->
+<pre class="r"><code>for(i in levels(ccdb$cells$Image)){
+  ccdb$plot_debug(i,savedir=&quot;G:/Zeiss Confocal/Cellcounter Aggregation/test/&quot;)
+  graphics.off()
+}</code></pre>
 <!-- rnb-source-end -->
 <!-- rnb-chunk-end -->
 <!-- rnb-text-begin -->
@@ -241,6 +247,9 @@ files &lt;- paste0(datadir,filenames)</code></pre>
 <h2>7) Save database object to file.</h2>
 <!-- rnb-text-end -->
 <!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuY2NkYiRzYXZlKGZpbGU9XCJjY2RiXCIpXG5gYGAifQ== -->
+<pre class="r"><code>ccdb$save(file=&quot;ccdb&quot;)</code></pre>
+<!-- rnb-source-end -->
 <!-- rnb-chunk-end -->
 <!-- rnb-text-begin -->
 </div>
@@ -257,10 +266,74 @@ files &lt;- paste0(datadir,filenames)</code></pre>
 <!-- rnb-frame-end -->
 <!-- rnb-chunk-end -->
 <!-- rnb-text-begin -->
+<p>Adding functions to privately plot debugs amongst ones that need it.</p>
+<!-- rnb-text-end -->
+<!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuY2NkYiRtZXRhZGF0YSRydW5fZGVidWcgPC0gVFJVRVxuY2NkYiRtZXRhZGF0YSRkZWJ1Z19kaXIgPC0gXCJHOi9aZWlzcyBDb25mb2NhbC9DZWxsY291bnRlciBBZ2dyZWdhdGlvbi9kZWJ1Zy9cIlxuXG50b19kZWJ1ZyA8LSBjKFwiSUhDMDA5IFRXMzAtNFIgRXBocmluQjEgMDA1LmxzbVwiLFxuICAgICAgICAgICAgICBcIklIQzAwOSBUVzMwLTZMIFZpbGxpbiAwMDUubHNtXCIsXG4gICAgICAgICAgICAgIFwiSUhDMDA5IFRXMzAtN1IgQ2hnQSAwMDEubHNtXCIsXG4gICAgICAgICAgICAgIFwiVFcyMS0yOSBJSEMwMDUgcC1IaXN0b25lMyA1LmN6aVwiKVxuY2NkYiRwcm9jZXNzRmVhdHVyZXMoY2NuYW1lcz10b19kZWJ1ZylcblxuY2NkYiRtZXRhZGF0YSRydW5fZGVidWcgPC0gRkFMU0VcbmBgYCJ9 -->
+<pre class="r"><code>ccdb$metadata$run_debug &lt;- TRUE
+ccdb$metadata$debug_dir &lt;- &quot;G:/Zeiss Confocal/Cellcounter Aggregation/debug/&quot;
+
+to_debug &lt;- c(&quot;IHC009 TW30-4R EphrinB1 005.lsm&quot;,
+              &quot;IHC009 TW30-6L Villin 005.lsm&quot;,
+              &quot;IHC009 TW30-7R ChgA 001.lsm&quot;,
+              &quot;TW21-29 IHC005 p-Histone3 5.czi&quot;)
+ccdb$processFeatures(ccnames=to_debug)
+
+ccdb$metadata$run_debug &lt;- FALSE</code></pre>
+<!-- rnb-source-end -->
+<!-- rnb-chunk-end -->
+<!-- rnb-text-begin -->
+<!-- rnb-text-end -->
+<!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuYW5nbGUgPSBmdW5jdGlvbih4LHkpe1xuICAgICAgIyBDYWxjcyBhbmdsZSBiZXR3ZWVuIHR3byB2ZWN0b3JzIGluIHJhZGlhbnMsIG5vbmRpcmVjdGlvbmFsIG1heCB2YWx1ZSBwaS4gQXNzdW1lcyBvcmlnaW4gb2YgMF5uXG4gICAgICBkb3QucHJvZCA8LSB4JSoleVxuICAgICAgbm9ybS54IDwtIGJhc2U6Om5vcm0oeCx0eXBlPVwiMlwiKVxuICAgICAgbm9ybS55IDwtIGJhc2U6Om5vcm0oeSx0eXBlPVwiMlwiKVxuICAgICAgdGhldGEgPC0gYWNvcyhkb3QucHJvZCAvIChub3JtLnggKiBub3JtLnkpKVxuICAgICAgcmV0dXJuKGFzLm51bWVyaWModGhldGEpKVxuICAgIH1cblxuICAgIHR3b2xpbmVzX2FuZ2xlID0gZnVuY3Rpb24oYSxiLGMsZCl7XG4gICAgICAjIEZpbmRzIHRoZSBhbmdsZSBiZXR3ZWVuIHR3byBsaW5lcyBBQiBhbmQgQ0RcbiAgICAgICMgQXNzdW1lcyB0aGF0IGFsbCBjb25uZWN0IEEtQi1DLUQsIHdpdGggQiBhbmQgQyBzZXJ2aW5nIGFzIG9yaWdpbnMgZm9yIEEgYW5kIEQuXG4gICAgICB4IDwtIE5hTlxuICAgICAgdHJ5KHggPC0gYW5nbGUoYS1iLGQtYyksc2lsZW50PVRSVUUpXG4gICAgICBpZihpcy5uYW4oeCkpe3JldHVybihwaSl9XG4gICAgICBlbHNlKHJldHVybih4KSlcbiAgICB9XG5cbiAgICByb2xsaW5nX2FuZ2xlID0gZnVuY3Rpb24odixjYyl7XG4gICAgICAjIHRyeUNhdGNoKHtcbiAgICAgICAgcmV0dXJuKG1hcHBseShmdW5jdGlvbih4MSx5MSx4Mix5Mix4Myx5Myx4NCx5NCl7dHdvbGluZXNfYW5nbGUoYyh4MSx5MSksYyh4Mix5MiksYyh4Myx5MyksYyh4NCx5NCkpfSxcbiAgICAgICAgICAgICAgICAgICAgICB4MSA9IGNjJGNlbGxzW3ZbYygxLDE6KGxlbmd0aCh2KS0xKSldLGMoXCJYXCIpXSxcbiAgICAgICAgICAgICAgICAgICAgICB5MSA9IGNjJGNlbGxzW3ZbYygxLDE6KGxlbmd0aCh2KS0xKSldLGMoXCJZXCIpXSxcbiAgICAgICAgICAgICAgICAgICAgICB4MiA9IGNjJGNlbGxzW3ZbYygxOmxlbmd0aCh2KSldLGMoXCJYXCIpXSxcbiAgICAgICAgICAgICAgICAgICAgICB5MiA9IGNjJGNlbGxzW3ZbYygxOmxlbmd0aCh2KSldLGMoXCJZXCIpXSxcbiAgICAgICAgICAgICAgICAgICAgICB4MyA9IGNjJGNlbGxzW3ZbYygyOmxlbmd0aCh2KSxsZW5ndGgodikrMSldLGMoXCJYXCIpXSxcbiAgICAgICAgICAgICAgICAgICAgICB5MyA9IGNjJGNlbGxzW3ZbYygyOmxlbmd0aCh2KSxsZW5ndGgodikrMSldLGMoXCJZXCIpXSxcbiAgICAgICAgICAgICAgICAgICAgICB4NCA9IGNjJGNlbGxzW3ZbYygzOmxlbmd0aCh2KSxsZW5ndGgodikrMSxsZW5ndGgodikrMildLGMoXCJYXCIpXSxcbiAgICAgICAgICAgICAgICAgICAgICB5NCA9IGNjJGNlbGxzW3ZbYygzOmxlbmd0aCh2KSxsZW5ndGgodikrMSxsZW5ndGgodikrMildLGMoXCJZXCIpXSkpXG4gICAgICAjIH0sXG4gICAgICAgICMgSW5jbHVkaW5nIGVycm9yL3dhcm5pbmcgZnVuY3Rpb25zIHRvIHNlbmQgYmFjayB2ZWN0b3Igb2YgMXMgb24gYXNzdW1wdGlvbiB0aGF0IHN1cHBsaWVkIHYgaXMgdG9vIHNob3J0IHRvIHdvcmsuXG4gICAgICAgICMgZXJyb3IgPSBmdW5jdGlvbihlKXtyZXR1cm4ocmVwKDEsdGltZXM9bGVuZ3RoKHYpKSl9LFxuICAgICAgICAjIHdhcm5pbmcgPSBmdW5jdGlvbih3KXtyZXR1cm4ocmVwKDEsdGltZXM9bGVuZ3RoKHYpKSl9KVxuICAgIH1cbiAgICBcbmNjIDwtIGNjZGIkQ0NGaWxlcyRgQUJUMDEgSUhDMDA2IFRXMjgtMTMgRGxsNCAxLTQwMCAxLmN6aWBcblxudiA8LSBjY2RiJGNlbGxzJEluZGV4WzE6MzBdXG5cbnJvbGxpbmdfYW5nbGUodixjYylcblxuYGBgIn0= -->
+<pre class="r"><code>angle = function(x,y){
+      # Calcs angle between two vectors in radians, nondirectional max value pi. Assumes origin of 0^n
+      dot.prod &lt;- x%*%y
+      norm.x &lt;- base::norm(x,type=&quot;2&quot;)
+      norm.y &lt;- base::norm(y,type=&quot;2&quot;)
+      theta &lt;- acos(dot.prod / (norm.x * norm.y))
+      return(as.numeric(theta))
+    }
+
+    twolines_angle = function(a,b,c,d){
+      # Finds the angle between two lines AB and CD
+      # Assumes that all connect A-B-C-D, with B and C serving as origins for A and D.
+      x &lt;- NaN
+      try(x &lt;- angle(a-b,d-c),silent=TRUE)
+      if(is.nan(x)){return(pi)}
+      else(return(x))
+    }
+
+    rolling_angle = function(v,cc){
+      # tryCatch({
+        return(mapply(function(x1,y1,x2,y2,x3,y3,x4,y4){twolines_angle(c(x1,y1),c(x2,y2),c(x3,y3),c(x4,y4))},
+                      x1 = cc$cells[v[c(1,1:(length(v)-1))],c(&quot;X&quot;)],
+                      y1 = cc$cells[v[c(1,1:(length(v)-1))],c(&quot;Y&quot;)],
+                      x2 = cc$cells[v[c(1:length(v))],c(&quot;X&quot;)],
+                      y2 = cc$cells[v[c(1:length(v))],c(&quot;Y&quot;)],
+                      x3 = cc$cells[v[c(2:length(v),length(v)+1)],c(&quot;X&quot;)],
+                      y3 = cc$cells[v[c(2:length(v),length(v)+1)],c(&quot;Y&quot;)],
+                      x4 = cc$cells[v[c(3:length(v),length(v)+1,length(v)+2)],c(&quot;X&quot;)],
+                      y4 = cc$cells[v[c(3:length(v),length(v)+1,length(v)+2)],c(&quot;Y&quot;)]))
+      # },
+        # Including error/warning functions to send back vector of 1s on assumption that supplied v is too short to work.
+        # error = function(e){return(rep(1,times=length(v)))},
+        # warning = function(w){return(rep(1,times=length(v)))})
+    }
+    
+cc &lt;- ccdb$CCFiles$`ABT01 IHC006 TW28-13 Dll4 1-400 1.czi`
+
+v &lt;- ccdb$cells$Index[1:30]
+
+rolling_angle(v,cc)
+</code></pre>
+<!-- rnb-source-end -->
+<!-- rnb-chunk-end -->
+<!-- rnb-text-begin -->
 <!-- rnb-text-end -->
 </div>
 
-<div id="rmd-source-code">LS0tDQp0aXRsZTogIkNDUHJvY2Vzc2luZyBQcmltZXIiDQpvdXRwdXQ6IGh0bWxfbm90ZWJvb2sNCi0tLQ0KDQojIzEpIExvYWQgbGlicmFyeSBhbmQgc2V0IHdvcmtpbmcgZGlyZWN0b3J5Lg0KDQpgYGB7ciBzZXR1cH0NCmxpYnJhcnkoY2Nwcm9jKQ0KDQp3ZCA8LSBkaXJuYW1lKHJzdHVkaW9hcGk6OmdldEFjdGl2ZURvY3VtZW50Q29udGV4dCgpJHBhdGgpDQprbml0cjo6b3B0c19jaHVuayRzZXQocm9vdC5kaXIgPSBkaXJuYW1lKHJzdHVkaW9hcGk6OmdldEFjdGl2ZURvY3VtZW50Q29udGV4dCgpJHBhdGgpKQ0KDQpgYGANCg0KIyMyKSBTZXQgZGF0YSBkaXJlY3RvcnkgYW5kIGxvYWQgZmlsZSBsaXN0Lg0KDQpgYGB7ciBzZXRfZGlyZWN0b3J5fQ0KZGF0YWRpciA8LSAiRzovWmVpc3MgQ29uZm9jYWwvQ2VsbGNvdW50ZXIgQWdncmVnYXRpb24vY2VsbGNvdW50ZXIvTmV3LyINCmZpbGVuYW1lcyA8LSBsaXN0LmZpbGVzKGRhdGFkaXIpDQpmaWxlcyA8LSBwYXN0ZTAoZGF0YWRpcixmaWxlbmFtZXMpDQpgYGANCg0KIyMzKSBMb2FkIGZpbGVzIGludG8gYSBuZXcgQ2VsbENvdW50ZXJEQiBvYmplY3QuDQoNCmBgYHtyIGxvYWRfZmlsZXN9DQpjY2RiIDwtIENlbGxDb3VudGVyREIkbmV3KGZpbGVzKQ0KYGBgDQoNCiMjNCkgUHJvY2VzcyByYXcgZGF0YSBpbnRvIGZlYXR1cmVzIChjcnlwdHMpDQoNCmBgYHtyIGZlYXR1cmVfcHJvY2Vzc2luZ30NCmNjZGIkcHJvY2Vzc0ZlYXR1cmVzKCkNCmBgYA0KDQojIzUpIFRhZyBhdHRyaWJ1dGVzIGJhc2VkIG9uIGZpbGVuYW1lcy4NCg0KYGBge3IgdGFnX2F0dHJpYnV0ZXN9DQpjY2RiJHRhZ19hdHRyaWJ1dGUoUmVnZXg9IihUV1swLTldezJ9KSIsYXR0cmlidXRlPSJTYW1wbGUiKQ0KYGBgDQoNCiMjNikgVmVyaWZ5IGZlYXR1cmUgZGV0ZWN0aW9uIHdpdGggZGVidWcgcGxvdHMuDQoNCmBgYHtyIGRlYnVnX3Bsb3RzfQ0KY2NkYiRwbG90X2RlYnVnKGxldmVscyhjY2RiJGNlbGxzJEltYWdlKSxzYXZlZGlyPSJHOi9aZWlzcyBDb25mb2NhbC9DZWxsY291bnRlciBBZ2dyZWdhdGlvbi90ZXN0LyIpDQpgYGANCg0KIyM3KSBTYXZlIGRhdGFiYXNlIG9iamVjdCB0byBmaWxlLg0KDQpgYGB7ciBzYXZlX2RifQ0KY2NkYiRzYXZlKGZpbGU9ImNjZGIiKQ0KYGBgDQoNCiMjOCkgQ2FsbCBjZWxscyBmcm9tIHNwZWNpZmljIHJvd3MsIGFjY29yZGluZyB0byBzcGVjaWZpYyBmZWF0dXJlcy4NCg0KYGBge3J9DQppbmRleCA8LSBjY2RiJHdoaWNoX2NlbGxzKGxpc3QoIlNhbXBsZSIgPSAiVFcyOCIsICJQb3MuQ3J5cHQiID0gMDoxMCwgIlJlZzQtZHNSZWQiID0gVFJVRSkpDQpwcmludChjY2RiJGNlbGxzW2luZGV4LF0pDQpgYGANCg0KDQo=</div>
+<div id="rmd-source-code">LS0tDQp0aXRsZTogIkNDUHJvY2Vzc2luZyBQcmltZXIiDQpvdXRwdXQ6IGh0bWxfbm90ZWJvb2sNCi0tLQ0KDQojIzEpIExvYWQgbGlicmFyeSBhbmQgc2V0IHdvcmtpbmcgZGlyZWN0b3J5Lg0KDQpgYGB7ciBzZXR1cH0NCmxpYnJhcnkoY2Nwcm9jKQ0KDQp3ZCA8LSBkaXJuYW1lKHJzdHVkaW9hcGk6OmdldEFjdGl2ZURvY3VtZW50Q29udGV4dCgpJHBhdGgpDQprbml0cjo6b3B0c19jaHVuayRzZXQocm9vdC5kaXIgPSBkaXJuYW1lKHJzdHVkaW9hcGk6OmdldEFjdGl2ZURvY3VtZW50Q29udGV4dCgpJHBhdGgpKQ0KDQpgYGANCg0KIyMyKSBTZXQgZGF0YSBkaXJlY3RvcnkgYW5kIGxvYWQgZmlsZSBsaXN0Lg0KDQpgYGB7ciBzZXRfZGlyZWN0b3J5fQ0KZGF0YWRpciA8LSAiRzovWmVpc3MgQ29uZm9jYWwvQ2VsbGNvdW50ZXIgQWdncmVnYXRpb24vY2VsbGNvdW50ZXIvTmV3LyINCmZpbGVuYW1lcyA8LSBsaXN0LmZpbGVzKGRhdGFkaXIpDQpmaWxlcyA8LSBwYXN0ZTAoZGF0YWRpcixmaWxlbmFtZXMpDQpgYGANCg0KIyMzKSBMb2FkIGZpbGVzIGludG8gYSBuZXcgQ2VsbENvdW50ZXJEQiBvYmplY3QuDQoNCmBgYHtyIGxvYWRfZmlsZXN9DQpjY2RiIDwtIENlbGxDb3VudGVyREIkbmV3KGZpbGVzKQ0KYGBgDQoNCiMjNCkgUHJvY2VzcyByYXcgZGF0YSBpbnRvIGZlYXR1cmVzIChjcnlwdHMpDQoNCmBgYHtyIGZlYXR1cmVfcHJvY2Vzc2luZ30NCmNjZGIkcHJvY2Vzc0ZlYXR1cmVzKCkNCmBgYA0KDQojIzUpIFRhZyBhdHRyaWJ1dGVzIGJhc2VkIG9uIGZpbGVuYW1lcy4NCg0KYGBge3IgdGFnX2F0dHJpYnV0ZXN9DQpjY2RiJHRhZ19hdHRyaWJ1dGUoUmVnZXg9IihUV1swLTldezJ9KSIsYXR0cmlidXRlPSJTYW1wbGUiKQ0KYGBgDQoNCiMjNikgVmVyaWZ5IGZlYXR1cmUgZGV0ZWN0aW9uIHdpdGggZGVidWcgcGxvdHMuDQoNCmBgYHtyIGRlYnVnX3Bsb3RzfQ0KZm9yKGkgaW4gbGV2ZWxzKGNjZGIkY2VsbHMkSW1hZ2UpKXsNCiAgY2NkYiRwbG90X2RlYnVnKGksc2F2ZWRpcj0iRzovWmVpc3MgQ29uZm9jYWwvQ2VsbGNvdW50ZXIgQWdncmVnYXRpb24vdGVzdC8iKQ0KICBncmFwaGljcy5vZmYoKQ0KfQ0KYGBgDQoNCiMjNykgU2F2ZSBkYXRhYmFzZSBvYmplY3QgdG8gZmlsZS4NCg0KYGBge3Igc2F2ZV9kYn0NCmNjZGIkc2F2ZShmaWxlPSJjY2RiIikNCmBgYA0KDQojIzgpIENhbGwgY2VsbHMgZnJvbSBzcGVjaWZpYyByb3dzLCBhY2NvcmRpbmcgdG8gc3BlY2lmaWMgZmVhdHVyZXMuDQoNCmBgYHtyIGNhbGxpbmdfZGF0YX0NCmluZGV4IDwtIGNjZGIkd2hpY2hfY2VsbHMobGlzdCgiU2FtcGxlIiA9ICJUVzI4IiwgIlBvcy5DcnlwdCIgPSAwOjEwLCAiUmVnNC1kc1JlZCIgPSBUUlVFKSkNCnByaW50KGNjZGIkY2VsbHNbaW5kZXgsXSkNCmBgYA0KDQoNCkFkZGluZyBmdW5jdGlvbnMgdG8gcHJpdmF0ZWx5IHBsb3QgZGVidWdzIGFtb25nc3Qgb25lcyB0aGF0IG5lZWQgaXQuIA0KYGBge3IgbW9yZV9kZWJ1Z2dpbmd9DQpjY2RiJG1ldGFkYXRhJHJ1bl9kZWJ1ZyA8LSBUUlVFDQpjY2RiJG1ldGFkYXRhJGRlYnVnX2RpciA8LSAiRzovWmVpc3MgQ29uZm9jYWwvQ2VsbGNvdW50ZXIgQWdncmVnYXRpb24vZGVidWcvIg0KDQp0b19kZWJ1ZyA8LSBjKCJJSEMwMDkgVFczMC00UiBFcGhyaW5CMSAwMDUubHNtIiwNCiAgICAgICAgICAgICAgIklIQzAwOSBUVzMwLTZMIFZpbGxpbiAwMDUubHNtIiwNCiAgICAgICAgICAgICAgIklIQzAwOSBUVzMwLTdSIENoZ0EgMDAxLmxzbSIsDQogICAgICAgICAgICAgICJUVzIxLTI5IElIQzAwNSBwLUhpc3RvbmUzIDUuY3ppIikNCmNjZGIkcHJvY2Vzc0ZlYXR1cmVzKGNjbmFtZXM9dG9fZGVidWcpDQoNCmNjZGIkbWV0YWRhdGEkcnVuX2RlYnVnIDwtIEZBTFNFDQpgYGANCg0KDQoNCg0KYGBge3Igc2FuZGJveH0NCmFuZ2xlID0gZnVuY3Rpb24oeCx5KXsNCiAgICAgICMgQ2FsY3MgYW5nbGUgYmV0d2VlbiB0d28gdmVjdG9ycyBpbiByYWRpYW5zLCBub25kaXJlY3Rpb25hbCBtYXggdmFsdWUgcGkuIEFzc3VtZXMgb3JpZ2luIG9mIDBebg0KICAgICAgZG90LnByb2QgPC0geCUqJXkNCiAgICAgIG5vcm0ueCA8LSBiYXNlOjpub3JtKHgsdHlwZT0iMiIpDQogICAgICBub3JtLnkgPC0gYmFzZTo6bm9ybSh5LHR5cGU9IjIiKQ0KICAgICAgdGhldGEgPC0gYWNvcyhkb3QucHJvZCAvIChub3JtLnggKiBub3JtLnkpKQ0KICAgICAgcmV0dXJuKGFzLm51bWVyaWModGhldGEpKQ0KICAgIH0NCg0KICAgIHR3b2xpbmVzX2FuZ2xlID0gZnVuY3Rpb24oYSxiLGMsZCl7DQogICAgICAjIEZpbmRzIHRoZSBhbmdsZSBiZXR3ZWVuIHR3byBsaW5lcyBBQiBhbmQgQ0QNCiAgICAgICMgQXNzdW1lcyB0aGF0IGFsbCBjb25uZWN0IEEtQi1DLUQsIHdpdGggQiBhbmQgQyBzZXJ2aW5nIGFzIG9yaWdpbnMgZm9yIEEgYW5kIEQuDQogICAgICB4IDwtIE5hTg0KICAgICAgdHJ5KHggPC0gYW5nbGUoYS1iLGQtYyksc2lsZW50PVRSVUUpDQogICAgICBpZihpcy5uYW4oeCkpe3JldHVybihwaSl9DQogICAgICBlbHNlKHJldHVybih4KSkNCiAgICB9DQoNCiAgICByb2xsaW5nX2FuZ2xlID0gZnVuY3Rpb24odixjYyl7DQogICAgICAjIHRyeUNhdGNoKHsNCiAgICAgICAgcmV0dXJuKG1hcHBseShmdW5jdGlvbih4MSx5MSx4Mix5Mix4Myx5Myx4NCx5NCl7dHdvbGluZXNfYW5nbGUoYyh4MSx5MSksYyh4Mix5MiksYyh4Myx5MyksYyh4NCx5NCkpfSwNCiAgICAgICAgICAgICAgICAgICAgICB4MSA9IGNjJGNlbGxzW3ZbYygxLDE6KGxlbmd0aCh2KS0xKSldLGMoIlgiKV0sDQogICAgICAgICAgICAgICAgICAgICAgeTEgPSBjYyRjZWxsc1t2W2MoMSwxOihsZW5ndGgodiktMSkpXSxjKCJZIildLA0KICAgICAgICAgICAgICAgICAgICAgIHgyID0gY2MkY2VsbHNbdltjKDE6bGVuZ3RoKHYpKV0sYygiWCIpXSwNCiAgICAgICAgICAgICAgICAgICAgICB5MiA9IGNjJGNlbGxzW3ZbYygxOmxlbmd0aCh2KSldLGMoIlkiKV0sDQogICAgICAgICAgICAgICAgICAgICAgeDMgPSBjYyRjZWxsc1t2W2MoMjpsZW5ndGgodiksbGVuZ3RoKHYpKzEpXSxjKCJYIildLA0KICAgICAgICAgICAgICAgICAgICAgIHkzID0gY2MkY2VsbHNbdltjKDI6bGVuZ3RoKHYpLGxlbmd0aCh2KSsxKV0sYygiWSIpXSwNCiAgICAgICAgICAgICAgICAgICAgICB4NCA9IGNjJGNlbGxzW3ZbYygzOmxlbmd0aCh2KSxsZW5ndGgodikrMSxsZW5ndGgodikrMildLGMoIlgiKV0sDQogICAgICAgICAgICAgICAgICAgICAgeTQgPSBjYyRjZWxsc1t2W2MoMzpsZW5ndGgodiksbGVuZ3RoKHYpKzEsbGVuZ3RoKHYpKzIpXSxjKCJZIildKSkNCiAgICAgICMgfSwNCiAgICAgICAgIyBJbmNsdWRpbmcgZXJyb3Ivd2FybmluZyBmdW5jdGlvbnMgdG8gc2VuZCBiYWNrIHZlY3RvciBvZiAxcyBvbiBhc3N1bXB0aW9uIHRoYXQgc3VwcGxpZWQgdiBpcyB0b28gc2hvcnQgdG8gd29yay4NCiAgICAgICAgIyBlcnJvciA9IGZ1bmN0aW9uKGUpe3JldHVybihyZXAoMSx0aW1lcz1sZW5ndGgodikpKX0sDQogICAgICAgICMgd2FybmluZyA9IGZ1bmN0aW9uKHcpe3JldHVybihyZXAoMSx0aW1lcz1sZW5ndGgodikpKX0pDQogICAgfQ0KICAgIA0KY2MgPC0gY2NkYiRDQ0ZpbGVzJGBBQlQwMSBJSEMwMDYgVFcyOC0xMyBEbGw0IDEtNDAwIDEuY3ppYA0KDQp2IDwtIGNjZGIkY2VsbHMkSW5kZXhbMTozMF0NCg0Kcm9sbGluZ19hbmdsZSh2LGNjKQ0KDQpgYGANCg0K</div>
 
 
 
