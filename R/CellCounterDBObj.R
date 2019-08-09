@@ -274,7 +274,8 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
     twolines_angle = function(a,b,c,d){
       # Finds the angle between two lines AB and CD
       # Assumes that all connect A-B-C-D, with B and C serving as origins for A and D.
-      try(x <- angle(a-b,d-c),silent=TRUE)
+      x <- NaN
+      try(x <- private$angle(a-b,d-c),silent=TRUE)
       if(is.nan(x)){return(pi)}
       else(return(x))
     },
