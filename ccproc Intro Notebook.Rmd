@@ -122,6 +122,18 @@ v <- ccdb$cells$Index[1:30]
 rolling_angle(v,cc)
 
 
+vector_to_edges = function(v){
+      # Returns a matrix of ordered edges, with edges moving between column 1 to column 2 down through rows.
+      # v is an ordered vector of vertex indices.
+      tryCatch(
+        {
+          return(matrix(c(v[1:(length(v)-1)],v[2:length(v)]),ncol=2))
+        },
+        error = function(e){message("Error in vector_to_edges: Vector not compatible.")},
+        warning = function(w){}
+      )
+    }
+
 ```
 
 # New testline

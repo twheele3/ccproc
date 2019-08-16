@@ -233,6 +233,68 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       }
     },
 
+    plot_debug2 = function(images,savedir=NA){
+      for(image in images){
+        cc <- self$cells[self$cells$Image==image,]
+        cc <- cc[order(cc$Index),]
+        cc[,"X"] <- cc[,"X"] / as.numeric(levels(self$CCFiles[[image]]$metadata$X_Calibration)[1])
+        cc[,"Y"] <- cc[,"Y"] / as.numeric(levels(self$CCFiles[[image]]$metadata$Y_Calibration)[1])
+        edges <- c()
+        for(i in unique(cc$Crypt[!is.na(cc$Crypt)])){
+          edges <- c(edges,t(vector_to_edges(ccdb$crypts[[i]]$cells)))
+        }
+        edges <- matrix(edges,ncol=2,byrow=TRUE)
+
+
+        if(is.character(savedir)){
+
+          tryCatch({
+
+            dev.new()
+            plot( x = c( min(cc[,"X"]), max(cc[,"X"])), y = c( min(cc[,"Y"]), max(cc[,"Y"])), col="white" ) +
+              points( x = cc[,"X"], y = cc[,"Y"], col=factor(cc$Crypt), cex=3, lwd=1, pch=26) +
+              text( x = cc[,"X"], y = cc[,"Y"], labels = as.character(abs(cc$Pos.Crypt)), offset = 0, cex = 1) +
+              segments( x0 = cc[edges[,1],"X"], y0 = cc[edges[,1],"Y"], x1 = cc[edges[,2],"X"], y1 = cc[edges[,2],"Y"] )
+
+            subset <- self$cells[self$which_cells(list("Image"=image)),]
+            p <- ggplot(subset[order(subset$Pos.Crypt),], aes(x=X,y=Y,group=Crypt,label=abs(Pos.Crypt),fill=as.factor(Crypt))) +
+              geom_path() +
+              geom_point(shape=21,color="black",size=6,stroke=1) +
+              geom_text() +
+              scale_x_reverse() + scale_y_reverse() +
+              theme(axis.line=element_blank(),
+                    axis.text.x=element_blank(),
+                    axis.text.y=element_blank(),
+                    axis.ticks=element_blank(),
+                    axis.title.x=element_blank(),
+                    axis.title.y=element_blank(),
+                    legend.position="none",
+                    panel.background=element_blank(),
+                    panel.border=element_blank(),
+                    panel.grid.major=element_blank(),
+                    panel.grid.minor=element_blank(),
+                    plot.background=element_blank())
+
+            png(paste0(savedir, image," debug plot.png"),
+                width=(max(subset$X)/as.numeric(levels(self$CCFiles[[image]]$metadata$X_Calibration)[1]) -
+                         min(subset$X)/as.numeric(levels(self$CCFiles[[image]]$metadata$X_Calibration)[1]) + 50),
+                height=(max(subset$Y)/as.numeric(levels(self$CCFiles[[image]]$metadata$Y_Calibration)[1]) -
+                          min(subset$Y)/as.numeric(levels(self$CCFiles[[image]]$metadata$Y_Calibration)[1]) + 50),
+                res=120, type="cairo")
+            plot(p)
+            dev.off()
+            graphics.off()
+          },
+          error = function(err){message(paste0("Could not plot ",image,"/n",err))})
+        }
+      }
+    },
+
+    remove_duplicates(radius=5){
+      # Removes duplicate cells within CCFiles on the assumption that any clicks within the test radius are duplicates.
+
+    },
+
     which_cells = function(listconditions){
       # Returns indices in self$cells that match conditions specified in list.
       return(which(apply(sapply(names(listconditions),function(x){self$cells[,x] %in% listconditions[[x]] }),1,prod)>0))
@@ -277,7 +339,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       x <- NaN
       try(x <- private$angle(a-b,d-c),silent=TRUE)
       if(is.nan(x)){return(pi)}
-      else(return(x))
+      else{return(x)}
     },
 
     rolling_angle = function(v,cc){
