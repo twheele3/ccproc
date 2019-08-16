@@ -70,7 +70,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       base::saveRDS(self, file = file)
     },
 
-    processFeatures = function(feature="Crypt"){
+    processFeatures = function(ccfiles="all",reprocess=FALSE,feature="Crypt"){
       # '
       # Process loaded cells into features. Expand in future to non-crypt stuff.
       # '
@@ -78,11 +78,46 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       if(!(feature %in% colnames(self$cells))){
         self$cells[,feature] <- 0
         self$cells[,paste0("Pos.",feature)] <- NA}
-      for(cc in self$CCFiles){
-        tryCatch({
-          if(!any("triangulation" %in% names(cc$metadata))){
-            private$create_triangulation(cc)
+      # TODO: add name comprehension and reprocessing checks.
+      if(ccfiles=="all"){
+        ccfiles = levels(self$cells$Image)
+      }
+      # Check that all image names are valid.
+      not_in_images <- ccfiles[!(ccfiles %in% levels(self$cells$Image))]
+      if(length(not_in_images) > 0 ){
+        message(paste("Warning: Images not found in database:",not_in_images))
+        ccfiles = ccfiles[(ccfiles %in% levels(self$cells$Image))]
+      }
+      # TODO: Put this in loop below properly
+      if(reprocess){
+        to_null <- unique(self$cells[which(self$cells$Image %in% ccfiles),feature])
+        to_null <- to_null[to_null > 0]
+        for(i in to_null){
+          self[[feature]][[i]]$Image <- NULL
+        }
+      }
+      # If not reprocessing, removes any names from the list that are processed. Checks this based on if all cells are assigned to crypts.
+      if(!reprocess){
+        exclude <- c()
+        for(img in ccfiles){
+          if(sum(img==self$cells$Image) == sum(ccdb$cells[img==self$cells$Image,feature]>0)){
+            exclude <- c(exclude,img)
           }
+        }
+        ccfiles <- ccfiles[-which(ccfiles %in% exclude)]
+      }
+
+      for(img in ccfiles){
+        # Create triangulation for CCFiles that don't have it yet.
+        if(!any("triangulation" %in% names(self$CCFiles[[img]]$metadata))){
+          private$create_triangulation(self$CCFiles[[img]])
+        }
+        # Recreate triangulation for CCFiles that have outdated triangulations, based on rowcounts.
+        if(nrow(self$CCFiles[[img]]$metadata$triangulation$P) != nrow(self$CCFiles[[img]]$cells)){
+          private$create_triangulation(self$CCFiles[[img]])
+        }
+        cc <- self$CCFiles[[img]]
+        tryCatch({
           tri <- cc$metadata$triangulation
           # Creates a rolling count of edges for each vector, sorted by distance increasing.
           tri$E.dist.roll <- private$rollcount(tri$E.dist,tri$E)
@@ -572,11 +607,20 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
         error = function(e){message("Error in vector_to_edges: Vector not compatible.")},
         warning = function(w){}
       )
+    },
+
+    rbind_fill = function(df1,df2){
+      # TODO: duplicate dplyr::rbind.fill functionality for this purpose to constrain dependencies.
+    }
+
+    stats_per_feature = function(feature="Crypt"){
+      # TODO: create aggregate stats around specified feature, further functionality, with specified table
     }
   )#,
   # active = list(
   #
   #   Markers = function(v){
+  # TODO: add dynamic marker element.
   #     # Returns either all unique markers in CCfiles, or which CCFiles have all specified markers
   #     if(missing(v)){ return(unique(unlist(lapply(self$crypts, function(x){x$Markers})))) }
   #     else{
