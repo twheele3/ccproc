@@ -36,7 +36,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       # Need method to run a list of files through, potential integration with other methods for post-processing.
       # '
       cc <- ccproc::CellCounter$new(ccfile)
-      private$create_triangulation(cc)
+      # private$create_triangulation(cc)
       image_name <- as.character(cc$metadata$Image_Filename)
       if(sum(image_name %in% names(self$CCFiles)) == 0){
         self$CCFiles[[image_name]] <- cc
@@ -75,18 +75,21 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       # Process loaded cells into features. Expand in future to non-crypt stuff.
       # '
 
+      # Add feature column if not yet present.
       if(!(feature %in% colnames(self$cells))){
         self$cells[,feature] <- 0
-        self$cells[,paste0("Pos.",feature)] <- NA}
+        self$cells[,paste0("Position.",feature)] <- NA
+      }
+      self$cells[is.na(self$cells[,feature]),feature] <- 0
       # TODO: add name comprehension and reprocessing checks.
       if(ccfiles=="all"){
-        ccfiles = levels(self$cells$Image)
+        ccfiles = names(self$CCFiles)
       }
       # Check that all image names are valid.
-      not_in_images <- ccfiles[!(ccfiles %in% levels(self$cells$Image))]
+      not_in_images <- ccfiles[!(ccfiles %in% names(self$CCFiles))]
       if(length(not_in_images) > 0 ){
         message(paste("Warning: Images not found in database:",not_in_images))
-        ccfiles = ccfiles[(ccfiles %in% levels(self$cells$Image))]
+        ccfiles = ccfiles[(ccfiles %in% names(self$CCFiles))]
       }
       # TODO: Put this in loop below properly
       if(reprocess){
@@ -100,24 +103,25 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       if(!reprocess){
         exclude <- c()
         for(img in ccfiles){
-          if(sum(img==self$cells$Image) == sum(ccdb$cells[img==self$cells$Image,feature]>0)){
+          if(sum(img==self$cells$Image) == sum(self$cells[img==self$cells$Image,feature]>0)){
             exclude <- c(exclude,img)
           }
         }
-        ccfiles <- ccfiles[-which(ccfiles %in% exclude)]
+        ccfiles <- ccfiles[!(ccfiles %in% exclude)]
       }
 
       for(img in ccfiles){
-        # Create triangulation for CCFiles that don't have it yet.
-        if(!any("triangulation" %in% names(self$CCFiles[[img]]$metadata))){
-          private$create_triangulation(self$CCFiles[[img]])
-        }
-        # Recreate triangulation for CCFiles that have outdated triangulations, based on rowcounts.
-        if(nrow(self$CCFiles[[img]]$metadata$triangulation$P) != nrow(self$CCFiles[[img]]$cells)){
-          private$create_triangulation(self$CCFiles[[img]])
-        }
-        cc <- self$CCFiles[[img]]
         tryCatch({
+          # Create triangulation for CCFiles that don't have it yet.
+          if(!any("triangulation" %in% names(self$CCFiles[[img]]$metadata))){
+            private$create_triangulation(self$CCFiles[[img]])
+          }
+          # Recreate triangulation for CCFiles that have outdated triangulations, based on rowcounts.
+          if(nrow(self$CCFiles[[img]]$metadata$triangulation$P) != nrow(self$CCFiles[[img]]$cells)){
+            private$create_triangulation(self$CCFiles[[img]])
+          }
+          cc <- self$CCFiles[[img]]
+
           tri <- cc$metadata$triangulation
           # Creates a rolling count of edges for each vector, sorted by distance increasing.
           tri$E.dist.roll <- private$rollcount(tri$E.dist,tri$E)
@@ -194,13 +198,6 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
             }
           }
 
-
-          # Add column for feature and position if not present.
-          if(!all(c(feature,paste0("Pos.",feature)) %in% colnames(self$cells))){
-            self$cells[,feature] <- NA
-            self$cells[,paste0("Pos.",feature)] <- NA
-          }
-
           # Final processing of crypt vectors and sorting of crypts into CryptObjs and addition to cell database.
           for(v in crypts){
             i <- length(self$crypts) + 1
@@ -224,110 +221,110 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
             self$crypts[[i]] <- c
             indices <- self$which_cells(list("Image" = c$Image, "Index" = v))
             self$cells[indices,feature] <- i
-            self$cells[indices,paste0("Pos.",feature)] <- c$pos(self$cells$Index[indices])
+            self$cells[indices,paste0("Position.",feature)] <- c$pos(self$cells$Index[indices])
           }
         },
-      error = function(err){message(paste("Error: Unable to process ",cc$metadata$Image_Filename))},
-      warning = function(w){})
+      error = function(err){message(paste("Error: Unable to process ",img,"/n",err,"/n"))},
+      warning = function(w){message(paste("Warning in",img,":",w))})
       }
     },
 
-    plot_debug = function(images,savedir="debug_images/"){
+    plot_debug = function(images,savedir=NA){
       for(image in images){
-        tryCatch({
-
-          subset <- self$cells[self$which_cells(list("Image"=image)),]
-          p <- ggplot(subset[order(subset$Pos.Crypt),], aes(x=X,y=Y,group=Crypt,label=abs(Pos.Crypt),fill=as.factor(Crypt))) +
-            geom_path() +
-            geom_point(shape=21,color="black",size=6,stroke=1) +
-            geom_text() +
-            scale_x_reverse() + scale_y_reverse() +
-            theme(axis.line=element_blank(),
-                  axis.text.x=element_blank(),
-                  axis.text.y=element_blank(),
-                  axis.ticks=element_blank(),
-                  axis.title.x=element_blank(),
-                  axis.title.y=element_blank(),
-                  legend.position="none",
-                  panel.background=element_blank(),
-                  panel.border=element_blank(),
-                  panel.grid.major=element_blank(),
-                  panel.grid.minor=element_blank(),
-                  plot.background=element_blank())
-
-          png(paste0(savedir, image," debug plot.png"),
-              width=(max(subset$X)/as.numeric(levels(self$CCFiles[[image]]$metadata$X_Calibration)[1]) -
-                       min(subset$X)/as.numeric(levels(self$CCFiles[[image]]$metadata$X_Calibration)[1]) + 50),
-              height=(max(subset$Y)/as.numeric(levels(self$CCFiles[[image]]$metadata$Y_Calibration)[1]) -
-                        min(subset$Y)/as.numeric(levels(self$CCFiles[[image]]$metadata$Y_Calibration)[1]) + 50),
-              res=120, type="cairo")
-          plot(p)
-          dev.off()
-        },
-        error = function(err){message(paste0("Could not plot ",image))})
-      }
-    },
-
-    plot_debug2 = function(images,savedir=NA){
-      for(image in images){
+        # Load cells of interest
         cc <- self$cells[self$cells$Image==image,]
+        # Reorder based on file index.
         cc <- cc[order(cc$Index),]
+        # Rescale to pixel values.
         cc[,"X"] <- cc[,"X"] / as.numeric(levels(self$CCFiles[[image]]$metadata$X_Calibration)[1])
         cc[,"Y"] <- cc[,"Y"] / as.numeric(levels(self$CCFiles[[image]]$metadata$Y_Calibration)[1])
+        # Flip Y axis
+        cc[,"Y"] <- abs(cc[,"Y"] - max(cc[,"Y"]))
+        # Create edges for all cells in crypts.
         edges <- c()
-        for(i in unique(cc$Crypt[!is.na(cc$Crypt)])){
-          edges <- c(edges,t(vector_to_edges(ccdb$crypts[[i]]$cells)))
+        for(i in unique(cc$Crypt[!is.na(cc$Crypt) & (cc$Crypt > 0)])){
+          edges <- c(edges,t(vector_to_edges(self$crypts[[i]]$cells)))
         }
-        edges <- matrix(edges,ncol=2,byrow=TRUE)
-
-
+        if(length(edges) > 0){
+          edges <- matrix(edges,ncol=2,byrow=TRUE)
+        }
+        # Save to file if save directory specified.
         if(is.character(savedir)){
 
           tryCatch({
-
             dev.new()
-            plot( x = c( min(cc[,"X"]), max(cc[,"X"])), y = c( min(cc[,"Y"]), max(cc[,"Y"])), col="white" ) +
-              points( x = cc[,"X"], y = cc[,"Y"], col=factor(cc$Crypt), cex=3, lwd=1, pch=26) +
-              text( x = cc[,"X"], y = cc[,"Y"], labels = as.character(abs(cc$Pos.Crypt)), offset = 0, cex = 1) +
-              segments( x0 = cc[edges[,1],"X"], y0 = cc[edges[,1],"Y"], x1 = cc[edges[,2],"X"], y1 = cc[edges[,2],"Y"] )
+            par(mar=c(0,0,1,0))
+            plot( x = c( min(cc[,"X"]) - 50, max(cc[,"X"]) + 50), y = c( min(cc[,"Y"]) - 50, max(cc[,"Y"]) + 50), col="white",
+                  axes = FALSE, main = image, bg = "white") +
+              segments( x0 = cc[edges[,1],"X"], y0 = cc[edges[,1],"Y"], x1 = cc[edges[,2],"X"], y1 = cc[edges[,2],"Y"] ) +
+              points( x = cc[,"X"], y = cc[,"Y"], col=factor(cc$Crypt), cex=3, lwd=1, pch=21, bg="white") +
+              text( x = cc[,"X"], y = cc[,"Y"], labels = as.character(abs(cc$Position.Crypt)), pos = 3, offset = 0.06, cex = 0.75) +
+              text( x = cc[,"X"], y = cc[,"Y"], labels = as.character(abs(cc$Index)), pos = 1, offset = 0.09, cex = 0.75)
 
-            subset <- self$cells[self$which_cells(list("Image"=image)),]
-            p <- ggplot(subset[order(subset$Pos.Crypt),], aes(x=X,y=Y,group=Crypt,label=abs(Pos.Crypt),fill=as.factor(Crypt))) +
-              geom_path() +
-              geom_point(shape=21,color="black",size=6,stroke=1) +
-              geom_text() +
-              scale_x_reverse() + scale_y_reverse() +
-              theme(axis.line=element_blank(),
-                    axis.text.x=element_blank(),
-                    axis.text.y=element_blank(),
-                    axis.ticks=element_blank(),
-                    axis.title.x=element_blank(),
-                    axis.title.y=element_blank(),
-                    legend.position="none",
-                    panel.background=element_blank(),
-                    panel.border=element_blank(),
-                    panel.grid.major=element_blank(),
-                    panel.grid.minor=element_blank(),
-                    plot.background=element_blank())
-
-            png(paste0(savedir, image," debug plot.png"),
-                width=(max(subset$X)/as.numeric(levels(self$CCFiles[[image]]$metadata$X_Calibration)[1]) -
-                         min(subset$X)/as.numeric(levels(self$CCFiles[[image]]$metadata$X_Calibration)[1]) + 50),
-                height=(max(subset$Y)/as.numeric(levels(self$CCFiles[[image]]$metadata$Y_Calibration)[1]) -
-                          min(subset$Y)/as.numeric(levels(self$CCFiles[[image]]$metadata$Y_Calibration)[1]) + 50),
-                res=120, type="cairo")
-            plot(p)
+            dev.copy(png, paste0(savedir, image," debug plot.png"),
+                     width = (max(cc[,"X"]) + 100 - min(cc[,"X"])), height = (max(cc[,"Y"]) + 220 - min(cc[,"Y"])), res=120, type="cairo")
             dev.off()
             graphics.off()
           },
-          error = function(err){message(paste0("Could not plot ",image,"/n",err))})
+          error = function(err){message(paste0("Could not plot ",image,"/n",err,"/n"))})
+        }else{
+          tryCatch({
+
+            dev.new()
+            par(mar=c(0,0,1,0))
+            plot( x = c( min(cc[,"X"]) - 50, max(cc[,"X"]) + 50), y = c( min(cc[,"Y"]) - 50, max(cc[,"Y"]) + 50), col="white",
+                  axes = FALSE, main = image, bg = "white") +
+              segments( x0 = cc[edges[,1],"X"], y0 = cc[edges[,1],"Y"], x1 = cc[edges[,2],"X"], y1 = cc[edges[,2],"Y"] ) +
+              points( x = cc[,"X"], y = cc[,"Y"], col=factor(cc$Crypt), cex=3, lwd=1, pch=21, bg="white") +
+              text( x = cc[,"X"], y = cc[,"Y"], labels = as.character(abs(cc$Position.Crypt)), pos = 3, offset = 0.06, cex = 0.75) +
+              text( x = cc[,"X"], y = cc[,"Y"], labels = as.character(abs(cc$Index)), pos = 1, offset = 0.09, cex = 0.75)
+          },
+          error = function(err){message(paste0("Could not plot ",image,"/n",err,"/n"))})
         }
       }
     },
 
-    remove_duplicates(radius=5){
+    remove_duplicates = function(r=5){
+      # TODO: Test this function.
       # Removes duplicate cells within CCFiles on the assumption that any clicks within the test radius are duplicates.
+      for(img in names(self$CCFiles)){
+        # Radius given in pixels and converted to real distance based on calibration.
+        radius = r * as.numeric(levels(self$CCFiles[[img]]$metadata$X_Calibration)[1])
 
+        # Calculate pairs that are closer than stated radius.
+        indices <- which(as.matrix(stats::dist(self$CCFiles[[img]]$cells[,c("X","Y","Z")])) <= radius, arr.ind=TRUE)
+        if(length(indices) > 0){
+          indices = indices[indices[,1] > indices[,2],]
+        }
+
+        i <- length(indices)/2
+        # Proceed if any are close enough.
+        # Iterative process to remove clusters then check whether there are any still too close.
+        while(length(indices)>0){
+          merged <- t(data.frame(lapply(1:(length(indices)/2), function(x){
+            c(colMeans(self$CCFiles[[img]]$cells[c(indices[c(x,x+(length(indices)/2))]),!(colnames(self$CCFiles[[img]]$cells) %in% self$CCFiles[[img]]$metadata$Markers)]),
+              colSums( self$CCFiles[[img]]$cells[c(indices[c(x,x+(length(indices)/2))]),self$CCFiles[[img]]$metadata$Markers]) > 0)
+          })))
+
+          self$CCFiles[[img]]$cells = rbind(self$CCFiles[[img]]$cells[-unique(c(indices)),],merged)
+          rownames(cc) <- NULL
+          indices = which(as.matrix(stats::dist(self$CCFiles[[img]]$cells[,c("X","Y","Z")])) <= radius, arr.ind=TRUE)
+          if(length(indices)>0){
+            indices = indices[indices[,1] > indices[,2],]
+          }
+          i = i + length(indices)/2
+        }
+        if(i > 0){
+          # Set markers back to boolean
+          self$CCFiles[[img]]$cells[,self$CCFiles[[img]]$metadata$Markers] <- self$CCFiles[[img]]$cells[,self$CCFiles[[img]]$metadata$Markers] > 0
+          # Remove old cells from database.
+          self$cells = self$cells[!(self$cells$Image==img),]
+          # Insert new cells.
+          plyr::rbind.fill(self$cells,self$CCFiles[[img]]$cells)
+          # Alert that some duplicates detected.
+          message(paste(i,"duplicate cells merged in",img))
+        }
+      }
     },
 
     which_cells = function(listconditions){
@@ -611,7 +608,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
 
     rbind_fill = function(df1,df2){
       # TODO: duplicate dplyr::rbind.fill functionality for this purpose to constrain dependencies.
-    }
+    },
 
     stats_per_feature = function(feature="Crypt"){
       # TODO: create aggregate stats around specified feature, further functionality, with specified table
