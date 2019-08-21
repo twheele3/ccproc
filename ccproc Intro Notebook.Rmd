@@ -61,7 +61,7 @@ ccdb$save(file="ccdb")
 ##8) Call cells from specific rows, according to specific features.
 
 ```{r calling_data}
-index <- ccdb$which_cells(list("Sample" = "TW28", "Pos.Crypt" = 0:10, "Reg4-dsRed" = TRUE))
+index <- ccdb$which_cells(list("Sample" = "TW28", "Position.Crypt" = 0:10, "Reg4-dsRed" = TRUE))
 print(ccdb$cells[index,])
 ```
 
@@ -84,45 +84,7 @@ ccdb$metadata$run_debug <- FALSE
 
 
 ```{r sandbox}
-for(img in names(self$CCFiles)){
-  # Radius given in pixels and converted to real distance based on calibration. 
-  radius <- 35
-  radius = radius * as.numeric(levels(self$CCFiles[[img]]$metadata$X_Calibration)[1])
-  
-  # Calculate pairs that are closer than stated radius.
-  indices <- which(as.matrix(stats::dist(self$CCFiles[[img]]$cells[,c("X","Y","Z")])) <= radius, arr.ind=TRUE)
-  if(length(indices) > 0){
-    indices = indices[indices[,1] > indices[,2],]
-  }
-  
-  i <- length(indices)/2
-  # Proceed if any are close enough.
-  # Iterative process to remove clusters then check whether there are any still too close. 
-  while(length(indices)>0){
-    merged <- t(data.frame(lapply(1:(length(indices)/2), function(x){
-      c(colMeans(self$CCFiles[[img]]$cells[c(indices[c(x,x+(length(indices)/2))]),!(colnames(self$CCFiles[[img]]$cells) %in% self$CCFiles[[img]]$metadata$Markers)]),
-        colSums( self$CCFiles[[img]]$cells[c(indices[c(x,x+(length(indices)/2))]),self$CCFiles[[img]]$metadata$Markers]) > 0)
-    })))
-    
-    self$CCFiles[[img]]$cells = rbind(self$CCFiles[[img]]$cells[-unique(c(indices)),],merged)
-    rownames(cc) <- NULL 
-    indices = which(as.matrix(stats::dist(self$CCFiles[[img]]$cells[,c("X","Y","Z")])) <= radius, arr.ind=TRUE)
-    if(length(indices)>0){
-      indices = indices[indices[,1] > indices[,2],]
-    }
-    i = i + length(indices)/2
-  }
-  if(i > 0){
-    # Set markers back to boolean
-    self$CCFiles[[img]]$cells[,self$CCFiles[[img]]$metadata$Markers] <- self$CCFiles[[img]]$cells[,self$CCFiles[[img]]$metadata$Markers] > 0
-    # Remove old cells from database.
-    self$cells = self$cells[!(self$cells$Image==img),]
-    # Insert new cells.
-    plyr::rbind.fill(self$cells,self$CCFiles[[img]]$cells)
-    # Alert that some duplicates detected.
-    message(paste(i,"duplicate cells merged in",img))
-  } 
-}
+
 ```
 
 # New testline

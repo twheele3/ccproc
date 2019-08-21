@@ -361,7 +361,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       dot.prod <- x%*%y
       norm.x <- base::norm(x,type="2")
       norm.y <- base::norm(y,type="2")
-      theta <- acos(dot.prod / (norm.x * norm.y))
+      theta <- acos(round(dot.prod / (norm.x * norm.y),digits = 15))
       return(as.numeric(theta))
     },
 
@@ -441,7 +441,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       tri$T.perm <- rbind(tri$T[,c(1,2,3)],tri$T[,c(1,3,2)],tri$T[,c(2,1,3)],tri$T[,c(2,3,1)],tri$T[,c(3,1,2)],tri$T[,c(3,2,1)])
       # Generate angle made between points as represented by columns 1-3-2.
       tri$T.theta <- mapply(function(x1,y1,x2,y2)
-        {as.numeric(acos(c(x1,y1)%*%c(x2,y2) / (base::norm(c(x1,y1),type="2") * base::norm(c(x2,y2),type="2"))))},
+        {as.numeric(acos(round(c(x1,y1)%*%c(x2,y2) / (base::norm(c(x1,y1),type="2") * base::norm(c(x2,y2),type="2")),digits=15)))},
         cc$cells[tri$T.perm[,1],"X"]-cc$cells[tri$T.perm[,3],"X"],
         cc$cells[tri$T.perm[,1],"Y"]-cc$cells[tri$T.perm[,3],"Y"],
         cc$cells[tri$T.perm[,2],"X"]-cc$cells[tri$T.perm[,3],"X"],
