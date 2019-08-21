@@ -47,7 +47,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
         if(all(is.na(self$cells))){
           self$cells <- newcells
         }else{
-          self$cells <- plyr::rbind.fill(self$cells, newcells)
+          self$cells <- private$rbind_fill(self$cells, newcells)
         }
       }
     },
@@ -320,7 +320,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
           # Remove old cells from database.
           self$cells = self$cells[!(self$cells$Image==img),]
           # Insert new cells.
-          plyr::rbind.fill(self$cells,self$CCFiles[[img]]$cells)
+          self$cells <- private$rbind_fill(self$cells, self$CCFiles[[img]]$cells)
           # Alert that some duplicates detected.
           message(paste(i,"duplicate cells merged in",img))
         }
@@ -606,8 +606,32 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       )
     },
 
-    rbind_fill = function(df1,df2){
-      # TODO: duplicate dplyr::rbind.fill functionality for this purpose to constrain dependencies.
+    rbind_fill = function(d1,d2){
+      # Returns merged dataframes with empty columns in either filled with NA. Sets column class with priority for d1
+      d1.names <- names(d1)
+      d2.names <- names(d2)
+      d1.names.u <- d1.names[!(d1.names %in% d2.names)]
+      d2.names.u <- d2.names[!(d2.names %in% d1.names)]
+      names.all <- c(d1.names,d2.names.u)
+      d2.class <- sapply(d2, class)
+      for(name in d2.names.u){
+        d1[,name] <- NA
+        if(d2.class[name]=="factor"){
+          d1[,name] <- factor(d1[,name])
+        }else{
+          class(d1[,name]) <- d2.class[name]
+        }
+      }
+      d2[,d1.names.u] <- NA
+      d1.class <- sapply(d1,class)
+      for(name in names.all){
+        if(d1.class[name]=="factor"){
+          d2[,name] <- factor(d2[,name])
+        }else{
+          class(d2[,name]) <- d1.class[name]
+        }
+      }
+      return(rbind(d1,d2))
     },
 
     stats_per_feature = function(feature="Crypt"){
