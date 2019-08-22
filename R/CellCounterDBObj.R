@@ -164,16 +164,17 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
               # Looks for cleave points between origins.
               for(j in 1:(length(ind_or)-1)){
                 subset <- set[ind_or[j]:ind_or[j+1]]
-                testfwd <- log(1:length(subset))
-                testrev <- log(length(subset):1)
-                angular_strain <- pi - private$rolling_angle(subset,cc)
-                dist_strain <- exp((private$rolling_dist(subset,cc)-dist.mean)/dist.sd)
-                # Checks that edges are present in Delaunay triangulation, applies strong penalty if not.
-                edgecheck <- (c(private$areEdges(private$vector_to_edges(subset),tri$E),1)==0)*100000
-                test_stat <- testfwd*testrev*angular_strain*angular_strain*dist_strain + edgecheck
+                # testfwd <- log(1:length(subset))
+                # testrev <- log(length(subset):1)
+                # angular_strain <- pi - private$rolling_angle(subset,cc)
+                # dist_strain <- exp((private$rolling_dist(subset,cc)-dist.mean)/dist.sd)
+                # # Checks that edges are present in Delaunay triangulation, applies strong penalty if not.
+                # edgecheck <- (c(private$areEdges(private$vector_to_edges(subset),tri$E),1)==0)*100000
+                # test_stat <- testfwd*testrev*angular_strain*angular_strain*dist_strain + edgecheck
+                cut_point <- private$find_cut_point(subset,img,dist.mean,dist.sd)
                 cleavepoints <- c(cleavepoints,
-                                  which(set==subset[order(test_stat,decreasing=T)[1]])[1],
-                                  which(set==subset[order(test_stat,decreasing=T)[1]])[1]+1)
+                                  which(set==subset[cut_point])[1],
+                                  which(set==subset[cut_point])[1]+1)
               }
               # Break loop around first cleavepoint and adjust set vector
               set <- set[-length(set)]
@@ -194,7 +195,116 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
               crypts <- private$list_append(crypts,set)
               # Put left-overs into unassigned.
             }else{
-              unassigned_sets <- private$list_append(unassigned_sets,subset)
+              unassigned_sets <- private$list_append(unassigned_sets,set)
+            }
+          }
+
+          # Make crypts loop properly before assigning unassigned.
+          for(i in 1:length(crypts)){
+            crypts[[i]] <- private$cut_open_crypt(crypts[[i]],img,dist.mean,dist.sd)
+            # Redundant code, moved to function
+            # v <- crypts[[i]]
+            # i0 <- cc$metadata$OriginCells[cc$metadata$OriginCells %in% v]
+            # # Cycle vector and make loop.
+            # v <- private$cycle_vector(v,i0)
+            # if(v[1]!=v[length(v)]){
+            #   v <- c(v,v[1])
+            # }
+            # # Re-testing to verify optimal opening point for crypt.
+            # cut_point <- private$find_cut_point(v,cc,dist.mean,dist.sd,tri$E)
+            # v <- c(v[(cut_point+1):(length(v)-1)],v[1:cut_point])
+            # crypts[[i]] <- v
+          }
+
+          # Assign unassigned sets by relinking with separated crypts.
+          # Still experimental, needs testing on real occurrences.
+          if(length(unassigned_sets)>0){
+            message(paste0("Experimental error-correction algorithm deployed for ",img,", please review results with 'plot_debug'!"))
+            while(!all(unlist(lapply(unassigned_sets,function(x){is.null(x)})))){
+
+              # First, pull all the endpoints from established crypts.
+              endpoints <- c()
+              for(i in crypts){
+                endpoints <- c(endpoints,i[1],i[length(i)])
+              }
+
+              # Grab set. Looping by nullifying as going through.
+              to_grab <- which(!unlist(sapply(unassigned_sets,function(x){is.null(x)})))[1]
+              set <- unassigned_sets[[to_grab]]
+              if(set[length(set)] == set[1]){
+                set <- set[1:(length(set)-1)]
+              }
+              unassigned_sets[[to_grab]] <- NULL
+              # Should extract candidate vertices from set
+              testedges <- matrix(c(rep(set,each=length(endpoints)),rep(endpoints,times=length(set))),ncol=2)
+              edges <- private$areEdges(testedges,tri$E)
+              edges <- edges[edges>0]
+              # Picks a start edge based on minimum distance * theta
+              start.edge <- tri$E[edges[order(tri$E.beta[edges] * tri$E.dist[edges])[1]],]
+              # Pull index from unassigned for start edge
+              set.start.index <- which(set %in% start.edge[start.edge %in% set])
+              # End point should be adjacent in ordered vector, with looping assumed.
+              set.end.candidates <- set[c((length(set) + set.start.index + 1) %% length(set),(length(set) + set.start.index - 1) %% length(set))]
+              # From candidates, determine which edge is the most likely fit.
+              edge.candidates <- tri$E[edges,][private$which_vert(set.end.candidates,tri$E[edges,]),]
+              edge.candidate.index <- private$areEdges(edge.candidates,tri$E)
+              end.edge <- tri$E[edge.candidate.index[order(tri$E.beta[edge.candidate.index] * tri$E.dist[edge.candidate.index])[1]],]
+              set.end.index <- which(set %in% end.edge[end.edge %in% set])
+              # Cycle and orient vector to merge with others.
+              set.start <- set[set.start.index]
+              set.end <- set[set.end.index]
+              set <- private$cycle_vector(set,set.start)
+              if(set.end != set[length(set)]){
+                set <- private$cycle_vector(set[length(set):1],set.start)
+              }
+
+              # Figure out which crypt sets to pull.
+              crypt.start <- ceiling((1:length(endpoints))/2)[which(endpoints %in% start.edge[start.edge %in% endpoints])]
+              crypt.end <- ceiling((1:length(endpoints))/2)[which(endpoints %in% end.edge[end.edge %in% endpoints])]
+
+              if(crypt.start == crypt.end){
+                cryptset <- crypts[[crypt.start]]
+                # Reorient cryptset vector
+                if(which(cryptset %in% start.edge) != length(cryptset)){
+                  cryptset <- cryptset[length(cryptset):1]
+                }
+                crypts[[crypt.start]] <- private$cut_open_crypt(c(cryptset,set),img,dist.mean,dist.sd)
+              }else{
+                # Process as per prior splitting method. Expecting two crypts so fixed output.
+                crypt1 <- crypts[[crypt.start]]
+                crypt2 <- crypts[[crypt.end]]
+                # Reorient crypt vectors
+                if(which(crypt1 %in% start.edge) != length(crypt1)){
+                  crypt1 <- crypt1[length(crypt1):1]
+                }
+                if(which(crypt2 %in% end.edge) != 1){
+                  crypt2 <- crypt2[length(crypt2):1]
+                }
+                set <- c(crypt1,set,crypt2,crypt1[1])
+
+                # Copy paste from previous cleaving algorithm. TODO: Try to get into a separate function to modularize.
+                origins <- cc$metadata$OriginCells[cc$metadata$OriginCells %in% set]
+                set <- private$cycle_vector(set,origins[1])
+                cleavepoints <- c()
+                ind_or <- sort(which(set %in% origins))
+                # Looks for cleave points between origins.
+                for(j in 1:(length(ind_or)-1)){
+                  subset <- set[ind_or[j]:ind_or[j+1]]
+                  cut_point <- private$find_cut_point(subset,img,dist.mean,dist.sd)
+                  cleavepoints <- c(cleavepoints,
+                                    which(set==subset[cut_point])[1],
+                                    which(set==subset[cut_point])[1]+1)
+                }
+                # Break loop around first cleavepoint and adjust set vector
+                set <- set[-length(set)]
+                set <- private$cycle_vector(set,set[cleavepoints[2]])
+                cleavepoints <- cleavepoints[-(1:2)]-cleavepoints[1]
+                # Set up paired indices of start and endpoints for each set in a 2-column matrix
+                cleavepoints <- matrix(c(1,cleavepoints,length(set)),ncol=2,byrow=TRUE)
+                set[cleavepoints[j,1]:cleavepoints[j,2]]
+                crypts[[crypt.start]] <- private$list_append(crypts,set[cleavepoints[1,1]:cleavepoints[1,2]])
+                crypts[[crypt.end]] <- private$list_append(crypts,set[cleavepoints[2,1]:cleavepoints[2,2]])
+              }
             }
           }
 
@@ -202,21 +312,6 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
           for(v in crypts){
             i <- length(self$crypts) + 1
             i0 <- cc$metadata$OriginCells[cc$metadata$OriginCells %in% v]
-            # Cycle vector and make loop.
-            v <- private$cycle_vector(v,i0)
-            if(v[1]!=v[length(v)]){
-              v <- c(v,v[1])
-            }
-            # Re-testing to verify optimal opening point for crypt.
-            testfwd <- log(1:length(v))
-            testrev <- log(length(v):1)
-            angular_strain <- pi - private$rolling_angle(v,cc)
-            dist_strain <- exp((private$rolling_dist(v,cc)-dist.mean)/dist.sd)
-            # Checks that edges are present in Delaunay triangulation, applies strong penalty if not.
-            edgecheck <- (c(private$areEdges(private$vector_to_edges(v),tri$E),1)==0)*100000
-            test_stat <- testfwd*testrev*angular_strain*dist_strain + edgecheck
-            cut_point <- order(test_stat,decreasing=TRUE)[1]
-            v <- c(v[(cut_point+1):(length(v)-1)],v[1:cut_point])
             c <- ccproc::Crypt$new(origin=i0,cells=v,Image=cc$metadata$Image_Filename,E.index=private$areEdges(private$vector_to_edges(v),tri$E))
             self$crypts[[i]] <- c
             indices <- self$which_cells(list("Image" = c$Image, "Index" = v))
@@ -224,7 +319,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
             self$cells[indices,paste0("Position.",feature)] <- c$pos(self$cells$Index[indices])
           }
         },
-      error = function(err){message(paste("Error: Unable to process ",img,"/n",err,"/n"))},
+      error = function(err){message(paste("Error: Unable to process ",img,"\n",err,"\n"))},
       warning = function(w){message(paste("Warning in",img,":",w))})
       }
     },
@@ -636,7 +731,40 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
 
     stats_per_feature = function(feature="Crypt"){
       # TODO: create aggregate stats around specified feature, further functionality, with specified table
+    },
+
+    find_cut_point = function(v,img,dist.mean,dist.sd){
+      # Returns the optimal cut point in an ordered vector
+      # Inputs:
+      # v = ordered vector describing points.
+      # cc = cellcounter object
+      # edges = edges E from a triangulation object
+      # dist.mean = mean distance between points
+      # dist.sd = sd of distance between points
+      cc <- self$CCFiles[[img]]
+      testfwd <- log(1:length(v))
+      testrev <- log(length(v):1)
+      angular_strain <- pi - private$rolling_angle(v,cc)
+      dist_strain <- exp((private$rolling_dist(v,cc)-dist.mean)/dist.sd)
+      # Checks that edges are present in Delaunay triangulation, applies strong penalty if not.
+      edgecheck <- (c(private$areEdges(private$vector_to_edges(v),cc$metadata$triangulation$E),1)==0)*100000
+      test_stat <- testfwd*testrev*angular_strain*angular_strain*dist_strain + edgecheck
+      return(order(test_stat,decreasing=TRUE)[1])
+    },
+
+    cut_open_crypt = function(v,img,dist.mean,dist.sd){
+      i0 <- self$CCFiles[[img]]$metadata$OriginCells[self$CCFiles[[img]]$metadata$OriginCells %in% v]
+      # Cycle vector to origin and make loop.
+      v <- private$cycle_vector(v,i0)
+      if(v[1]!=v[length(v)]){
+        v <- c(v,v[1])
+      }
+      # Test to verify optimal opening point for crypt.
+      cut_point <- private$find_cut_point(v,img,dist.mean,dist.sd)
+      v <- c(v[(cut_point+1):(length(v)-1)],v[1:cut_point])
+      return(v)
     }
+
   )#,
   # active = list(
   #

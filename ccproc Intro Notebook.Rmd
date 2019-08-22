@@ -84,7 +84,195 @@ ccdb$metadata$run_debug <- FALSE
 
 
 ```{r sandbox}
+# This file is the only one currently with unassigned cells, so using as a test case. 
+img = "IHC009 TW30-3R Reg4 001.lsm"
+cc <- ccdb$CCFiles[[img]]$cells
+tri <- ccdb$CCFiles[[img]]$metadata$triangulation
+crypt.ind <- unique(ccdb$cells[which(ccdb$cells$Image==img),"Crypt"])
+crypt.ind <- crypt.ind[crypt.ind>0]
+crypts <- list()
+for(i in 1:length(crypt.ind)){
+  crypts[[i]] <- ccdb$crypts[[crypt.ind[i]]]$cells
+}
+unassigned_sets <- list(c(137,136,135,134,133,132))
 
+# Assign unassigned sets by relinking with separated crypts.
+          # TODO
+          # '
+          # ' Basic workflow to construct:
+          # '   - Loop through unassigned sets
+          # '   - Look for connections between endpoints in established crypts and any in unassigned set.
+          # '   - Determine optimal connection points based on angular and distance strain.
+          # '   - Merge vectors in order based on above.
+          # '   - Re-cut into separate crypts.
+          
+          if(length(unassigned_sets)>0){
+            while(!all(unlist(lapply(unassigned_sets,function(x){is.null(x)})))){
+              
+              # First, pull all the endpoints from established crypts.
+              endpoints <- c()
+              for(i in crypts){
+                endpoints <- c(endpoints,i[1],i[length(i)])
+              }
+              
+              # Grab set. Looping by nullifying as going through. 
+              to_grab <- which(!unlist(sapply(test,function(x){is.null(x)})))[1]
+              set <- unassigned_sets[[to_grab]]
+              unassigned_sets[[to_grab]] <- NULL
+              # Should extract candidate vertices from set
+              testedges <- matrix(c(rep(set,each=length(endpoints)),rep(endpoints,times=length(set))),ncol=2)
+              edges <- private$areEdges(testedges,tri$E)
+              edges <- edges[edges>0]
+              # Picks a start edge based on minimum distance * theta
+              start.edge <- tri$E[edges[order(tri$E.beta[edges] * tri$E.dist[edges])[1]],]
+              # Pull index from unassigned for start edge
+              set.start.index <- which(set %in% start.edge[start.edge %in% set])
+              # End point should be adjacent in ordered vector, with looping assumed.
+              set.end.candidates <- set[c((length(set) + set.start.index + 1) %% length(set),(length(set) + set.start.index - 1) %% length(set))]
+              # From candidates, determine which edge is the most likely fit.
+              edge.candidates <- tri$E[edges,][private$which_vert(set.end.candidates,tri$E[edges,]),]
+              edge.candidate.index <- private$areEdges(edge.candidates,tri$E)
+              end.edge <- tri$E[edge.candidate.index[order(tri$E.beta[edge.candidate.index] * tri$E.dist[edge.candidate.index])[1]],]
+              set.end.index <- which(set %in% end.edge[end.edge %in% set])
+              # Cycle and orient vector to merge with others.
+              set.start <- set[set.start.index]
+              set.end <- set[set.end.index]
+              set <- private$cycle_vector(set,set.start)
+              if(set.end != set[length(set)]){
+                set <- private$cycle_vector(set[length(set):1],set.start)
+              }
+              
+              # Figure out which crypt sets to pull.
+              crypt.start <- ceiling((1:length(endpoints))/2)[which(endpoints %in% start.edge[start.edge %in% endpoints])]
+              crypt.end <- ceiling((1:length(endpoints))/2)[which(endpoints %in% end.edge[end.edge %in% endpoints])]
+              
+              if(crypt.start == crypt.end){
+                cryptset <- crypts[[crypt.start]]
+                # Reorient cryptset vector 
+                if(which(cryptset %in% start.edge) != length(cryptset)){
+                  cryptset <- cryptset[length(cryptset):1]
+                }
+                crypts[[crypt.start]] <- private$cut_open_crypt(c(cryptset,set),cc,dist.mean,dist.sd,tri$E)
+              }else{
+                # Process as per prior splitting method. Expecting two crypts so fixed output.
+                crypt1 <- crypts[[crypt.start]]
+                crypt2 <- crypts[[crypt.end]]
+                # Reorient crypt vectors
+                if(which(crypt1 %in% start.edge) != length(crypt1)){
+                  crypt1 <- crypt1[length(crypt1):1]
+                }
+                if(which(crypt2 %in% end.edge) != 1){
+                  crypt2 <- crypt2[length(crypt2):1]
+                }
+                set <- c(crypt1,set,crypt2,crypt1[1])
+                
+                # Copy paste from previous cleaving algorithm. TODO: Try to get into a separate function to modularize. 
+                origins <- cc$metadata$OriginCells[cc$metadata$OriginCells %in% set]
+                set <- private$cycle_vector(set,origins[1])
+                cleavepoints <- c()
+                ind_or <- sort(which(set %in% origins))
+                # Looks for cleave points between origins.
+                for(j in 1:(length(ind_or)-1)){
+                  subset <- set[ind_or[j]:ind_or[j+1]]
+                  cut_point <- private$find_cut_point(subset,cc,dist.mean,dist.sd,tri$E)
+                  cleavepoints <- c(cleavepoints,
+                                    which(set==subset[cut_point])[1],
+                                    which(set==subset[cut_point])[1]+1)
+                }
+                # Break loop around first cleavepoint and adjust set vector
+                set <- set[-length(set)]
+                set <- private$cycle_vector(set,set[cleavepoints[2]])
+                cleavepoints <- cleavepoints[-(1:2)]-cleavepoints[1]
+                # Set up paired indices of start and endpoints for each set in a 2-column matrix
+                cleavepoints <- matrix(c(1,cleavepoints,length(set)),ncol=2,byrow=TRUE)
+                set[cleavepoints[j,1]:cleavepoints[j,2]]
+                crypts[[crypt.start]] <- private$list_append(crypts,set[cleavepoints[1,1]:cleavepoints[1,2]])
+                crypts[[crypt.end]] <- private$list_append(crypts,set[cleavepoints[2,1]:cleavepoints[2,2]])
+              }
+            }
+          }
+        
+
+
+which_vert = function(i,x){
+      # Returns which vertices in set x contain indices i. Assumes vertices are rows.
+      return(which(rowSums(matrix(x %in% i,ncol=ncol(x)))>0))
+}
+
+isEdge = function(vector,edgeset){
+  # Returns index of edge formed by vector components in edgeset, or 0 if not in edgeset.
+  tryCatch(
+    {
+      index = (base::rowSums((edgeset==vector[1])+(edgeset==vector[2]))==2)
+      if(any(index)){
+        return(which(index))
+      }
+      else{
+        return(0)
+      }
+    },
+    error = function(e){message("Error in isEdge: vector must be length 2.")},
+    warning = function(w){}
+  )
+}
+
+areEdges = function(m,edgeset){
+  # Returns index of edge formed by vector components in each row of matrix m in edgeset, or 0 if not in edgeset.
+  # m is a matrix with 2 columns.
+  # A mapply wrapper for isEdge.
+  tryCatch(
+    {
+      return(mapply(function(v1,v2){isEdge(c(v1,v2),edgeset)},
+                    v1=m[,1],
+                    v2=m[,2]))
+    },
+    error = function(e){message("Error in areEdges: Matrix not compatible.")},
+    warning = function(w){}
+  )
+}
+
+
+cycle_vector = function(v,i){
+  # Cycles vector so that value i is at position 1 (and pos(last) if looped)
+  if(v[1]==i){
+    return(v)
+  }else if(v[1]==v[length(v)]){
+    return(c(v[which(v==i):length(v)],v[2:(which(v==i)-1)],i))
+  }else{
+    return(c(v[which(v==i):length(v)],v[1:(which(v==i)-1)]))
+  }
+}
+
+find_cut_point = function(v,cc,dist.mean,dist.sd,edges){
+      # Returns the optimal cut point in an ordered vector
+      # Inputs:
+      # v = ordered vector describing points.
+      # cc = cellcounter object
+      # edges = edges E from a triangulation object
+      # dist.mean = mean distance between points
+      # dist.sd = sd of distance between points
+      testfwd <- log(1:length(v))
+      testrev <- log(length(v):1)
+      angular_strain <- pi - private$rolling_angle(v,cc)
+      dist_strain <- exp((private$rolling_dist(v,cc)-dist.mean)/dist.sd)
+      # Checks that edges are present in Delaunay triangulation, applies strong penalty if not.
+      edgecheck <- (c(private$areEdges(private$vector_to_edges(v),edges),1)==0)*100000
+      test_stat <- testfwd*testrev*angular_strain*angular_strain*dist_strain + edgecheck
+      return(order(test_stat,decreasing=TRUE)[1])
+    }
+
+    cut_open_crypt = function(v,cc,dist.mean,dist.sd,edges){
+      i0 <- cc$metadata$OriginCells[cc$metadata$OriginCells %in% v]
+      # Cycle vector to origin and make loop.
+      v <- private$cycle_vector(v,i0)
+      if(v[1]!=v[length(v)]){
+        v <- c(v,v[1])
+      }
+      # Test to verify optimal opening point for crypt.
+      cut_point <- find_cut_point(v,cc,dist.mean,dist.sd,edges)
+      v <- c(v[(cut_point+1):(length(v)-1)],v[1:cut_point])
+      return[v]
+    }
 
 ```
 
