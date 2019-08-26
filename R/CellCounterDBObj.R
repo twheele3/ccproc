@@ -328,7 +328,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
         # Create edges for all cells in crypts.
         edges <- c()
         for(i in unique(cc$Crypt[!is.na(cc$Crypt) & (cc$Crypt > 0)])){
-          edges <- c(edges,t(vector_to_edges(self$crypts[[i]]$cells)))
+          edges <- c(edges,t(private$vector_to_edges(self$crypts[[i]]$cells)))
         }
         if(length(edges) > 0){
           edges <- matrix(edges,ncol=2,byrow=TRUE)
