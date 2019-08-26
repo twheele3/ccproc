@@ -355,8 +355,6 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
         }else{
           tryCatch({
 
-            dev.new()
-            par(mar=c(0,0,1,0))
             plot( x = c( min(cc[,"X"]) - 50, max(cc[,"X"]) + 50), y = c( min(cc[,"Y"]) - 50, max(cc[,"Y"]) + 50), col="white",
                   axes = FALSE, main = image, bg = "white") +
               segments( x0 = cc[edges[,1],"X"], y0 = cc[edges[,1],"Y"], x1 = cc[edges[,2],"X"], y1 = cc[edges[,2],"Y"] ) +
