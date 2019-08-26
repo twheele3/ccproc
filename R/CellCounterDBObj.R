@@ -424,7 +424,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
         return(message("Error: Attribute must be named and not already in use in cells table."))
       }
       self$metadata[[paste0(attribute,"Regex")]] <- Regex
-      self$cells[,attribute] <- factor(private$string_extract(as.character(self$cells$Image),self$metadata[[paste0(attribute,"Regex")]])[1])
+      self$cells[,attribute] <- factor(private$string_extract(as.character(self$cells$Image),self$metadata[[paste0(attribute,"Regex")]]))
     }
     #
     # setMarkerColors = function(list=list()){
