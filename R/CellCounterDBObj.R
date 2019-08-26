@@ -18,19 +18,20 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
     CCFiles = NA,
     crypts = NA,
     metadata = NA,
-    # Markers = NA,
+    Markers = NA,
     # MarkerColors = NA,
 
     initialize = function(filelist){
       self$CCFiles <- list()
       self$crypts <- list()
       self$metadata <- list()
+      self$Markers <- c()
       for(file in filelist){
         self$addCC(file)
       }
     },
 
-    addCC = function(ccfile){
+    addCC = function(ccfile,replace=FALSE){
       # '
       # Adds new CellCounterObj to list, then adds cells to database data.frame.
       # Need method to run a list of files through, potential integration with other methods for post-processing.
@@ -38,6 +39,11 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       cc <- ccproc::CellCounter$new(ccfile)
       # private$create_triangulation(cc)
       image_name <- as.character(cc$metadata$Image_Filename)
+      # Remove if replacing
+      if( replace & (sum(image_name %in% names(self$CCFiles)) > 0) ){
+        self$removeCC(image_name)
+      }
+      # Check that image is not already loaded.
       if(sum(image_name %in% names(self$CCFiles)) == 0){
         self$CCFiles[[image_name]] <- cc
         newcells <- cbind(cc$cells,Image=rep(image_name,nrow(cc$cells)),Index=1:nrow(cc$cells))
@@ -49,6 +55,10 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
         }else{
           self$cells <- private$rbind_fill(self$cells, newcells)
         }
+        # Add new markers to Markers
+        self$Markers <- sort(unique(c(self$Markers,cc$Markers)))
+        # Reorder cells columns with Markers last.
+        self$cells <- self$cells[,c(colnames(self$cells)[!(colnames(self$cells) %in% self$Markers)],self$Markers)]
       }
     },
 
@@ -157,20 +167,12 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
             if(looping){
               set <- private$cycle_vector(set,origins[1])
             }
-
             cleavepoints <- c()
             ind_or <- sort(which(set %in% origins))
             if(length(ind_or)>2){
               # Looks for cleave points between origins.
               for(j in 1:(length(ind_or)-1)){
                 subset <- set[ind_or[j]:ind_or[j+1]]
-                # testfwd <- log(1:length(subset))
-                # testrev <- log(length(subset):1)
-                # angular_strain <- pi - private$rolling_angle(subset,cc)
-                # dist_strain <- exp((private$rolling_dist(subset,cc)-dist.mean)/dist.sd)
-                # # Checks that edges are present in Delaunay triangulation, applies strong penalty if not.
-                # edgecheck <- (c(private$areEdges(private$vector_to_edges(subset),tri$E),1)==0)*100000
-                # test_stat <- testfwd*testrev*angular_strain*angular_strain*dist_strain + edgecheck
                 cut_point <- private$find_cut_point(subset,img,dist.mean,dist.sd)
                 cleavepoints <- c(cleavepoints,
                                   which(set==subset[cut_point])[1],
@@ -202,24 +204,12 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
           # Make crypts loop properly before assigning unassigned.
           for(i in 1:length(crypts)){
             crypts[[i]] <- private$cut_open_crypt(crypts[[i]],img,dist.mean,dist.sd)
-            # Redundant code, moved to function
-            # v <- crypts[[i]]
-            # i0 <- cc$metadata$OriginCells[cc$metadata$OriginCells %in% v]
-            # # Cycle vector and make loop.
-            # v <- private$cycle_vector(v,i0)
-            # if(v[1]!=v[length(v)]){
-            #   v <- c(v,v[1])
-            # }
-            # # Re-testing to verify optimal opening point for crypt.
-            # cut_point <- private$find_cut_point(v,cc,dist.mean,dist.sd,tri$E)
-            # v <- c(v[(cut_point+1):(length(v)-1)],v[1:cut_point])
-            # crypts[[i]] <- v
           }
 
           # Assign unassigned sets by relinking with separated crypts.
           # Still experimental, needs testing on real occurrences.
           if(length(unassigned_sets)>0){
-            message(paste0("Experimental error-correction algorithm deployed for ",img,", please review results with 'plot_debug'!"))
+            message(paste0("Experimental error-correction algorithm used for ",img,", please review results with 'plot_debug'!"))
             while(!all(unlist(lapply(unassigned_sets,function(x){is.null(x)})))){
 
               # First, pull all the endpoints from established crypts.
