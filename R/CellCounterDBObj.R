@@ -431,10 +431,10 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       # Calculate total distance along cells in a feature from origin position by tracing along edges.
       tracecol <- paste0("Dist.From.",origin,".",feature)
       self$cells[,tracecol] <- NA
-      for(i in na.omit( unique(ccdb$cells$Crypt))){
+      for(i in na.omit( unique(self$cells$Crypt))){
         crypt <- self$crypts[[i]]
         if(!is.null(crypt$Image)){
-          img <- as.character(ccdb$crypts[[i]]$Image)
+          img <- as.character(self$crypts[[i]]$Image)
           leftward <- ave(
             self$CCFiles[[img]]$metadata$triangulation$E.dist[
               private$areEdges(
@@ -454,6 +454,21 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
           dists <- c(leftward[length(leftward):1],0,rightward)
           indices <- self$which_cells(list("Image" = img, "Index" = crypt$cells))
           self$cells[indices,tracecol][order(self$cells[indices,"Index"])] <- dists[order(crypt$cells)]
+        }
+      }
+    },
+
+    traceAngleAlongFeature = function(feature="Crypt"){
+      # Calculate total distance along cells in a feature from origin position by tracing along edges.
+      tracecol <- paste0("Angle.Along.",feature)
+      self$cells[,tracecol] <- NA
+      for(i in na.omit(unique(self$cells$Crypt))){
+        crypt <- self$crypts[[i]]
+        if(!is.null(crypt$Image)){
+          img <- as.character(self$crypts[[i]]$Image)
+          angles <- pi - private$rolling_angle(crypt$cells,self$CCFiles[[img]])
+          indices <- self$which_cells(list("Image" = img, "Index" = crypt$cells))
+          self$cells[indices,tracecol][order(self$cells[indices,"Index"])] <- angles[order(crypt$cells)]
         }
       }
     }
