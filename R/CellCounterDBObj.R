@@ -425,6 +425,37 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       }
       self$metadata[[paste0(attribute,"Regex")]] <- Regex
       self$cells[,attribute] <- factor(private$string_extract(as.character(self$cells$Image),self$metadata[[paste0(attribute,"Regex")]]))
+    },
+
+    traceDistAlongFeature = function(feature="Crypt",origin=0){
+      # Calculate total distance along cells in a feature from origin position by tracing along edges.
+      tracecol <- paste0("Dist.From.",origin,".",feature)
+      self$cells[,tracecol] <- NA
+      for(i in na.omit( unique(ccdb$cells$Crypt))){
+        crypt <- self$crypts[[i]]
+        if(!is.null(crypt$Image)){
+          img <- as.character(ccdb$crypts[[i]]$Image)
+          leftward <- ave(
+            self$CCFiles[[img]]$metadata$triangulation$E.dist[
+              private$areEdges(
+                private$vector_to_edges(
+                  crypt$cells[
+                    which(crypt$cells == crypt$origin): 1]),
+                self$CCFiles[[img]]$metadata$triangulation$E)],
+            FUN = cumsum)
+          rightward <- ave(
+            self$CCFiles[[img]]$metadata$triangulation$E.dist[
+              private$areEdges(
+                private$vector_to_edges(
+                  crypt$cells[
+                    which(crypt$cells == crypt$origin):length(crypt$cells)]),
+                self$CCFiles[[img]]$metadata$triangulation$E)],
+            FUN = cumsum)
+          dists <- c(leftward[length(leftward):1],0,rightward)
+          indices <- self$which_cells(list("Image" = img, "Index" = crypt$cells))
+          self$cells[indices,tracecol][order(self$cells[indices,"Index"])] <- dists[order(crypt$cells)]
+        }
+      }
     }
     #
     # setMarkerColors = function(list=list()){
