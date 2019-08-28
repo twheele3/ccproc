@@ -47,7 +47,16 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       if(sum(image_name %in% names(self$CCFiles)) == 0){
         self$CCFiles[[image_name]] <- cc
         newcells <- cbind(cc$cells,Image=rep(image_name,nrow(cc$cells)),Index=1:nrow(cc$cells))
-        if(any("SampleRegex" %in% names(self$metadata))){
+        if("Attributes" %in% names(self$metadata)){
+          for(attribute in names(self$metadata)){
+            tryCatch({
+            newcells[,attribute] <- factor(
+              private$string_extract(
+                as.character(newcells[,self$metadata$Attributes[[attribute]]$source_col]),
+                self$metadata$Attributes[[attribute]]$Regex))},
+            error = function(err){message(paste("Error in tagging attributes for ",image_name,": ",err))},
+            warning = function(w){message(paste("Warning in tagging attributes for ",image_name,": ",w))})
+          }
           newcells$Sample <-factor(private$string_extract(as.character(newcells$Image),self$metadata$SampleRegex)[1])
         }
         if(all(is.na(self$cells))){
@@ -415,16 +424,27 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       return(which(apply(sapply(names(listconditions),function(x){self$cells[,x] %in% listconditions[[x]] }),1,prod)>0))
     },
 
-    tag_attribute = function(Regex="",attribute=""){
-      # Inserts a column into dataframe as attribute, labeling cells by regex pattern as applied to Image string.
+    tag_attribute = function(Regex="",attribute="", source_col="Image"){
+      # Inserts a column into dataframe as attribute, labeling cells by regex pattern as applied to source_col string.
       if(Regex==""){
-        return(message("Error: Attribute tagging requires a RegEx pattern to apply to image names!"))
+        return(message("Error: Attribute tagging requires a RegEx pattern to apply to image names."))
       }
       if(attribute=="" | any(attribute %in% colnames(self$cells))){
         return(message("Error: Attribute must be named and not already in use in cells table."))
       }
-      self$metadata[[paste0(attribute,"Regex")]] <- Regex
-      self$cells[,attribute] <- factor(private$string_extract(as.character(self$cells$Image),self$metadata[[paste0(attribute,"Regex")]]))
+      if(!any(colnames(self$cells) %in% source_col)){
+        return(message("Error: Source column must be in $cells dataframe."))
+      }
+      # self$metadata[[paste0(attribute,"Regex")]] <- Regex
+      if(!("Attributes" %in% names(self$metadata))){
+        self$metadata[["Attributes"]] <- list()
+      }
+      self$metadata[["Attributes"]][[attribute]] <- list("Regex" = Regex,
+                                            "source_col" = source_col)
+      self$cells[,attribute] <- factor(
+        private$string_extract(
+          as.character(self$cells[,self$metadata$Attributes[[attribute]]$source_col]),
+          self$metadata$Attributes[[attribute]]$Regex))
     },
 
     traceDistAlongFeature = function(feature="Crypt",origin=0){
