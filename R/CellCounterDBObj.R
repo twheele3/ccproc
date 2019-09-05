@@ -45,30 +45,34 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       }
       # Check that image is not already loaded.
       if(sum(image_name %in% names(self$CCFiles)) == 0){
-        self$CCFiles[[image_name]] <- cc
-        newcells <- cbind(cc$cells,Image=rep(image_name,nrow(cc$cells)),Index=1:nrow(cc$cells))
-        if("Attributes" %in% names(self$metadata)){
-          for(attribute in names(self$metadata)){
-            tryCatch({
-            newcells[,attribute] <- factor(
-              private$string_extract(
-                as.character(newcells[,self$metadata$Attributes[[attribute]]$source_col]),
-                self$metadata$Attributes[[attribute]]$Regex))},
-            error = function(err){message(paste("Error in tagging attributes for ",image_name,": ",err))},
-            warning = function(w){message(paste("Warning in tagging attributes for ",image_name,": ",w))})
+        tryCatch({
+          self$CCFiles[[image_name]] <- cc
+          newcells <- cbind(cc$cells,Image=rep(image_name,nrow(cc$cells)),Index=1:nrow(cc$cells))
+          if("Attributes" %in% names(self$metadata)){
+            for(attribute in names(self$metadata)){
+              tryCatch({
+              newcells[,attribute] <- factor(
+                private$string_extract(
+                  as.character(newcells[,self$metadata$Attributes[[attribute]]$source_col]),
+                  self$metadata$Attributes[[attribute]]$Regex))},
+              error = function(err){message(paste("Error in tagging attributes for ",image_name,": ",err))},
+              warning = function(w){message(paste("Warning in tagging attributes for ",image_name,": ",w))})
+            }
+            newcells$Sample <-factor(private$string_extract(as.character(newcells$Image),self$metadata$SampleRegex)[1])
           }
-          newcells$Sample <-factor(private$string_extract(as.character(newcells$Image),self$metadata$SampleRegex)[1])
-        }
-        if(all(is.na(self$cells))){
-          self$cells <- newcells
-        }else{
-          self$cells <- private$rbind_fill(self$cells, newcells)
-        }
-        # Add new markers to Markers
-        self$Markers <- sort(unique(c(self$Markers,cc$Markers)))
-        # Reorder cells columns with Markers last.
-        self$cells <- self$cells[,c(colnames(self$cells)[!(colnames(self$cells) %in% self$Markers)],self$Markers)]
-      }
+          if(all(is.na(self$cells))){
+            self$cells <- newcells
+          }else{
+            self$cells <- private$rbind_fill(self$cells, newcells)
+          }
+          # Add new markers to Markers
+          self$Markers <- sort(unique(c(self$Markers,cc$Markers)))
+          # Reorder cells columns with Markers last.
+          self$cells <- self$cells[,c(colnames(self$cells)[!(colnames(self$cells) %in% self$Markers)],self$Markers)]
+        },
+        error = function(err){message(paste("Error in loading ",image_name,": ",err))},
+        warning = function(w){message(paste("Warning in loading ",image_name,": ",w))})
+      }else{message(paste0(image_name, " not loaded, already found in database."))}
     },
 
     removeCC = function(Image){
@@ -219,6 +223,10 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
           # Still experimental, needs testing on real occurrences.
           if(length(unassigned_sets)>0){
             message(paste0("Experimental error-correction algorithm used for ",img,", please review results with 'plot_debug'!"))
+            print("Crypts:")
+            for(i in crypts){print(i)}
+            print("Unassigned:")
+            for(i in unassigned_sets){print(i)}
             while(!all(unlist(lapply(unassigned_sets,function(x){is.null(x)})))){
 
               # First, pull all the endpoints from established crypts.
@@ -491,6 +499,90 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
           self$cells[indices,tracecol][order(self$cells[indices,"Index"])] <- angles[order(crypt$cells)]
         }
       }
+    },
+
+    unblind_images = function(experiment_regex,key_regex,attribute,key,value_attribute){
+      # Create a function to unblind images from sets of keys.
+      # experiment_regex is a regex argument matching a key to marked slides from an experiment.
+      # key_regex is a regex argument that extracts a key from filename.
+      # attribute is the column from which experiment_regex and key_regex are tested against.
+      # key is a named list matching keys to values
+      # value_attribute is the attribute type of which values correspond to (eg "Sample")
+
+
+    },
+
+    aggregate_by_feature = function(group.by,measure.by,melt.by=c()){
+      # Uses table functions to aggregate data into a
+      ### Inputs
+
+      ### Fcn Start
+      all.by <- c( group.by, measure.by )
+
+      ### Error checking
+      if(any(!(all.by %in% colnames(self$cells)))){
+        return(message(paste("Error in aggregate_by_feature: Specified column names not found in cells dataframe: ",
+                             c(all.by)[!(c(all.by) %in% colnames(self$cells))])))
+      }
+
+
+      if(class(melt.by) != "logical" & class(melt.by) != "numeric"){
+        return(message("Error in aggregate_by_feature: melt.by parameter is not a logical or numerical vector."))
+      }
+      if((length(melt.by) != length(measure.by)) & (length(melt.by) != 0) ){
+        return(message("Error in aggregate_by_feature: melt.by and measure.by parameter lengths must be equal."))
+      }
+
+      val.table <- table(self$cells[,all.by])
+      val.key <- which(rep(
+        data.frame(margin.table( val.table, 1:length(group.by) ))$Freq > 0,
+        times=(2**length(measure.by))
+      ))
+      val.df <- data.frame(val.table)[val.key,]
+      ratio.df <- data.frame(prop.table( val.table, which(group.by %in% all.by) ))[val.key,]
+      val.df[, paste(c("ratio.vs",group.by), collapse = "." ) ] <- ratio.df$Freq
+      colnames(val.df)[which(colnames(val.df)=="Freq")] <- "Count"
+      colnames(val.df)[1:length(all.by)] <- all.by
+
+      if(length(melt.by) > 0){
+        val.df <- val.df[which(base::rowSums( val.df[,measure.by]
+                                              == matrix( rep(melt.by,times=nrow(val.df)),ncol=length(melt.by),byrow = TRUE )
+        )==length(melt.by)),]
+        val.df <- cbind(val.df[,group.by], "Markers" = paste0(measure.by,":", melt.by, collapse = "."), val.df[,(length(all.by)+1):ncol(val.df)])
+      }
+      rownames(val.df) <- NULL
+      return(val.df)
+    },
+
+    aggregate_by_features = function(group.by, measure.by, melt.by=list()){
+      # Aggregates data based on grouping variables, using a list of features or markers to measure by.
+      # Wrapper for self$aggregate_by_feature
+      if(any(!(c(group.by,unlist(measure.by)) %in% colnames(self$cells)))){
+        return(message(paste("Error in aggregate_by_features: Specified column names not found in cells dataframe: ",
+                             c(group.by,unlist(measure.by))[!(c(group.by,unlist(measure.by)) %in% colnames(self$cells))])))
+      }
+      if(class(measure.by) != "list" & class(melt.by) != "list" ){
+        return(message("Error in aggregate_by_features: measure.by and melt.by parameters must be lists."))
+      }
+      if((length(melt.by) != length(measure.by)) & (length(melt.by) != 0) ){
+        return(message("Error in aggregate_by_features: melt.by and measure.by parameter lengths must be equal."))
+      }
+
+      to_return <- NULL
+      for(i in 1:length(measure.by)){
+        to_add <- NULL
+        tryCatch({
+          to_add <- self$aggregate_by_feature(group.by, measure.by[[i]], melt.by[[i]])
+          if(is.null(to_return)){
+            to_return = to_add
+          }else{
+            to_return = private$rbind_fill(to_return, to_add)
+          }
+        },
+        error = function(e){message(paste("Error in aggregate_by_features: ",e))},
+        warning = function(w){message(paste("Warning in aggregate_by_features: ",w))})
+      }
+      return(to_return)
     }
     #
     # setMarkerColors = function(list=list()){
@@ -796,8 +888,8 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       # dist.mean = mean distance between points
       # dist.sd = sd of distance between points
       cc <- self$CCFiles[[img]]
-      testfwd <- log(1:length(v))
-      testrev <- log(length(v):1)
+      testfwd <- log(1:length(v) + 0.1)
+      testrev <- log(length(v):1 + 0.1)
       angular_strain <- pi - private$rolling_angle(v,cc)
       dist_strain <- exp((private$rolling_dist(v,cc)-dist.mean)/dist.sd)
       # Checks that edges are present in Delaunay triangulation, applies strong penalty if not.
