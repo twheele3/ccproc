@@ -501,20 +501,74 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       }
     },
 
-    unblind_images = function(experiment_regex,key_regex,attribute,key,value_attribute){
-      # Create a function to unblind images from sets of keys.
-      # experiment_regex is a regex argument matching a key to marked slides from an experiment.
-      # key_regex is a regex argument that extracts a key from filename.
-      # attribute is the column from which experiment_regex and key_regex are tested against.
-      # key is a named list matching keys to values
-      # value_attribute is the attribute type of which values correspond to (eg "Sample")
+    add_attributes_with_key = function(key_attribute, keydb, key_column = "key", whichcells = NA, is.new=TRUE){
+      # A function to add attributes in bulk with a key table.
+      # key_attribute : a string specifying a source column from self$cells table
+      # keydb : a table containing attribute info, with column titles. May be a string pointing to a csv file.
+      # key_column : the column name within keydb that contains key information.
+      # whichcells : a list of parameters to constrain attribute assignment to, as per self$which_cells function.
+      # is.new : If TRUE, will add a metadata entry to parse future entries automatically.
 
+      # Input error checking
+      if(is.character(keydb)){
+        tryCatch(
+          keydb <- read.csv(keydb,header = T),
+          error = function(err){message(paste0("Key database could not be parsed as data frame: /n",err,"/n"))})
+      }
 
+      if(!is.data.frame(keydb)){
+        return(message("Key database could not be parsed as data frame."))
+      }
+
+      if(!any(colnames(keydb) == key_column)){
+        return(message(paste0("No columns in key dataframe specified as '", key_column,"'.")))
+      }
+
+      # Experiment_regex = NA by default because may fall in key_regex
+      if(is.na(whichcells)){
+        cell_indices <-  1:nrow(self$cells)
+      }else{
+        cell_indices <-  self$which_cells(whichcells)
+      }
+
+      # For future use, extract all other column names aside from key.
+      valnames <- colnames(keydb)[!(colnames(keydb) %in% key_column)]
+
+      # Coerce all key columns into factors.
+      for(i in names(keydb)) { keydb[,i] <- factor(keydb[,i]) }
+
+      # Add new factor levels to new columns
+      for(i in valnames) {
+        # Add column for new attribute types
+        if(!(i %in% colnames(self$cells))) { self$cells[,i] <- NA }
+        # Coerce target column to factor if not already
+        if(class(self$cells[,i]) != "factor") { self$cells[,i] <- factor(self$cells[,i]) }
+        #Add new factor levels to column.
+        levels(self$cells[,i]) <- c( levels(self$cells[,i]), levels(keydb[,i]) )
+      }
+
+      for(i in 1:nrow(keydb)){
+        key <- keydb[,key_column][i]
+        key_indices <- which(self$cells[,key_attribute] %in% key)
+        indices <- key_indices[which(key_indices %in% cell_indices)]
+        self$cells[indices,valnames] = keydb[i,valnames]
+      }
+
+      if(!("Unblinding" %in% names(self$metadata)) ){
+        self$metadata$Unblinding = list()
+      }
+
+      if(is.new){
+        i <- length(self$metadata$Unblinding) + 1
+        self$metadata$Unblinding[[i]] <- list("whichcells" = whichcells,
+                                              "keydb" = keydb,
+                                              "key_attribute" = key_attribute,
+                                              "key_column" = key_column)
+      }
     },
 
-    aggregate_by_feature = function(group.by,measure.by,melt.by=c()){
-      # Uses table functions to aggregate data into a
-      ### Inputs
+    aggregate_by_feature = function(group.by,measure.by,melt.data=TRUE){
+      # Uses table functions to aggregate data into a dataframe by grouping attributes
 
       ### Fcn Start
       all.by <- c( group.by, measure.by )
@@ -523,14 +577,6 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       if(any(!(all.by %in% colnames(self$cells)))){
         return(message(paste("Error in aggregate_by_feature: Specified column names not found in cells dataframe: ",
                              c(all.by)[!(c(all.by) %in% colnames(self$cells))])))
-      }
-
-
-      if(class(melt.by) != "logical" & class(melt.by) != "numeric"){
-        return(message("Error in aggregate_by_feature: melt.by parameter is not a logical or numerical vector."))
-      }
-      if((length(melt.by) != length(measure.by)) & (length(melt.by) != 0) ){
-        return(message("Error in aggregate_by_feature: melt.by and measure.by parameter lengths must be equal."))
       }
 
       val.table <- table(self$cells[,all.by])
@@ -544,35 +590,52 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       colnames(val.df)[which(colnames(val.df)=="Freq")] <- "Count"
       colnames(val.df)[1:length(all.by)] <- all.by
 
-      if(length(melt.by) > 0){
-        val.df <- val.df[which(base::rowSums( val.df[,measure.by]
-                                              == matrix( rep(melt.by,times=nrow(val.df)),ncol=length(melt.by),byrow = TRUE )
-        )==length(melt.by)),]
-        val.df <- cbind(val.df[,group.by], "Markers" = paste0(measure.by,":", melt.by, collapse = "."), val.df[,(length(all.by)+1):ncol(val.df)])
+      if(melt.data){
+        # val.df <- val.df[which(base::rowSums( val.df[,measure.by]
+        #                                       == matrix( rep(melt.by,times=nrow(val.df)),ncol=length(melt.by),byrow = TRUE )
+        # )==length(melt.by)),]
+        # Creating boolean permutation array for tagging responses.
+        perms <- !(expand.grid(rep(list(c(TRUE,FALSE)),length(measure.by))))
+        tags <- rep(0,nrow(perms))
+        for(i in 1:nrow(perms)){
+          tags[i] <- paste0(c("0.","1.")[perms[i,]+1],1:length(measure.by),collapse="|")
+        }
+        # Combining to factors based on boolean response.
+        val.df$MarkerCombo <- 0
+        for(i in 1:length(measure.by)){
+          val.df$MarkerCombo <- val.df$MarkerCombo + (as.logical(val.df[,measure.by[i]]) * 2**(i-1))
+        }
+        val.df$MarkerCombo <- factor(val.df$MarkerCombo, levels = 0:(2**length(measure.by) - 1),labels=tags)
+        # Adding labels for markers for melting.
+        for(i in 1:length(measure.by)){
+          val.df[,paste0("Marker",i)] <- measure.by[i]
+        }
+        # Tidying df order
+        val.df <- val.df[,c(colnames(val.df)[1:length(group.by)],
+                            "MarkerCombo",
+                            paste0("Marker",1:length(measure.by)),
+                            colnames(val.df)[(length(all.by)+1):(length(all.by)+2)])]
       }
       rownames(val.df) <- NULL
       return(val.df)
     },
 
-    aggregate_by_features = function(group.by, measure.by, melt.by=list()){
+    aggregate_by_features = function(group.by, measure.by, melt.data=TRUE){
       # Aggregates data based on grouping variables, using a list of features or markers to measure by.
       # Wrapper for self$aggregate_by_feature
       if(any(!(c(group.by,unlist(measure.by)) %in% colnames(self$cells)))){
         return(message(paste("Error in aggregate_by_features: Specified column names not found in cells dataframe: ",
                              c(group.by,unlist(measure.by))[!(c(group.by,unlist(measure.by)) %in% colnames(self$cells))])))
       }
-      if(class(measure.by) != "list" & class(melt.by) != "list" ){
-        return(message("Error in aggregate_by_features: measure.by and melt.by parameters must be lists."))
-      }
-      if((length(melt.by) != length(measure.by)) & (length(melt.by) != 0) ){
-        return(message("Error in aggregate_by_features: melt.by and measure.by parameter lengths must be equal."))
+      if(class(measure.by) != "list" ){
+        return(message("Error in aggregate_by_features: measure.by parameter must be a list of markers/attributes."))
       }
 
       to_return <- NULL
       for(i in 1:length(measure.by)){
         to_add <- NULL
         tryCatch({
-          to_add <- self$aggregate_by_feature(group.by, measure.by[[i]], melt.by[[i]])
+          to_add <- self$aggregate_by_feature(group.by, measure.by[[i]], melt.data)
           if(is.null(to_return)){
             to_return = to_add
           }else{
