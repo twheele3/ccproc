@@ -1,12 +1,6 @@
----
-title: "ccproc set-up and instructions for use"
-output: html_notebook
-editor_options: 
-  chunk_output_type: inline
----
 
-## Foreword:
-This notebook is to help install and familiarize you with features of the 'ccproc' package, designed for use with the Fiji Cellcounter plugin (v3.0.0+) to identify and sort data based on features. This notebook assumes you also copied a few demo files included with it; you should be able to swap them out for your own and change specific parameters to work with them instead. 
+## CCPROC Introduction:
+'ccproc' is a feature detection package that is designed for use with the Fiji Cell Counter plugin (v3.0.0+) to streamline data processing and auditing for images of structured tissue. The basic idea underlying this package is that technicians can visually inspect and score cells and markers in a structured system using an intuitive and simple plugin, to generate files which can be processed quickly into discrete data for further analysis. This can eliminate a lot of time spent switching back and forth between spreadsheets, and aid in reproducibility and auditing by allowing users to save and load marking files for inspection and correction. This processing also produces data that can be further processed using advanced data parameterization techniques, increasing the threshold of analysis rigor in classically lower-rigor systems without significantly increasing workload.
 
 ## Installation
 This package can be installed most easily by using the 'devtools' package to compile the 'twheele3/ccproc' package from github.
