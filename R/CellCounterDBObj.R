@@ -144,18 +144,24 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
             private$create_triangulation(self$CCFiles[[img]])
           }
           cc <- self$CCFiles[[img]]
-
+          algo_debug <- list()
           tri <- cc$metadata$triangulation
           # Creates a rolling count of edges for each vector, sorted by distance increasing.
           tri$E.dist.roll <- private$rollcount(tri$E.dist,tri$E)
           # Creates a rolling count of edges for each vector, sorted by beta increasing.
           tri$E.beta.roll <- private$rollcount(tri$E.beta,tri$E)
           # First define a subset of edges (E.subset) based on paring edges where both have more than 3 connections as sorted by distance.
-          E.subset <- private$pare_edges_by_rolling(tri$E.beta.roll,connections.max=2)
+          E.subset <- private$pare_edges_by_rolling(tri$E.dist.roll,connections.max=3)
+          algo_debug[["1-dist.roll>3"]] <- E.subset
           # Further refine E.subset by paring edges as sorted by beta.
-          E.subset <- E.subset[private$pare_edges_by_rolling(tri$E.dist.roll[E.subset,],connections.max=2)]
+          E.subset <- E.subset[private$pare_edges_by_rolling(tri$E.beta.roll[E.subset,],connections.max=2)]
+          algo_debug[["2-beta.roll>2"]] <- E.subset
           # Removes additional cyclical vectors by determining which edges have vertices both with too many connections.
           E.subset <- E.subset[private$pare_edges_by_count(tri$E[E.subset,],connections.max=2)]
+          algo_debug[["3-edge.count>2"]] <- E.subset
+          # Repair any broken pathing
+          E.subset <- private$fix_pathing(edgeset = tri$E, subset = E.subset, origins = cc$metadata$OriginCells)
+          algo_debug[["4-fix.path"]] <- E.subset
           # Create an aggregate statistic from normalized distance (shifted to 1 for multiplier effect) and beta.
           dist.mean = mean(tri$E.dist[E.subset])
           dist.sd = sd(tri$E.dist[E.subset])
@@ -164,6 +170,13 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
           hybrid_stat <- dist.normalized + tri$E.beta[E.subset]
 
           E.subset <- E.subset[private$pare_edges_by_stat(stat=hybrid_stat, edgeset=tri$E[E.subset,], decreasing=TRUE, connections.max=2)]
+          algo_debug[["5-betadist.stat>2"]] <- E.subset
+
+          # Final repair and cleanup steps to ensure everything's closed up and connected.
+          E.subset <- private$fix_pathing(edgeset = tri$E, subset = E.subset, origins = cc$metadata$OriginCells)
+          algo_debug[["6-fix.path"]] <- E.subset
+          E.subset <- E.subset[private$pare_edges_by_count(tri$E[E.subset,],connections.max=2)]
+          algo_debug[["7-edge.count>2"]] <- E.subset
 
           # Sort remaining edges into ordered vectors.
           ordered_sets <- private$pared_edgeset_to_ordered_vectors(tri$E[E.subset,])
@@ -220,100 +233,105 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
           }
 
           # Assign unassigned sets by relinking with separated crypts.
-          # Still experimental, needs testing on real occurrences.
+          # Commenting out for now, too unstable at present. Just adding simple reporter.
           if(length(unassigned_sets)>0){
-            message(paste0("Experimental error-correction algorithm used for ",img,", please review results with 'plot_debug'!"))
-            print("Crypts:")
-            for(i in crypts){print(i)}
-            print("Unassigned:")
-            for(i in unassigned_sets){print(i)}
-            while(!all(unlist(lapply(unassigned_sets,function(x){is.null(x)})))){
-
-              # First, pull all the endpoints from established crypts.
-              endpoints <- c()
-              for(i in crypts){
-                endpoints <- c(endpoints,i[1],i[length(i)])
-              }
-
-              # Grab set. Looping by nullifying as going through.
-              to_grab <- which(!unlist(sapply(unassigned_sets,function(x){is.null(x)})))[1]
-              set <- unassigned_sets[[to_grab]]
-              if(set[length(set)] == set[1]){
-                set <- set[1:(length(set)-1)]
-              }
-              unassigned_sets[[to_grab]] <- NULL
-              # Should extract candidate vertices from set
-              testedges <- matrix(c(rep(set,each=length(endpoints)),rep(endpoints,times=length(set))),ncol=2)
-              edges <- private$areEdges(testedges,tri$E)
-              edges <- edges[edges>0]
-              # Picks a start edge based on minimum distance * theta
-              start.edge <- tri$E[edges[order(tri$E.beta[edges] * tri$E.dist[edges])[1]],]
-              # Pull index from unassigned for start edge
-              set.start.index <- which(set %in% start.edge[start.edge %in% set])
-              # End point should be adjacent in ordered vector, with looping assumed.
-              set.end.candidates <- set[c((length(set) + set.start.index + 1) %% length(set),(length(set) + set.start.index - 1) %% length(set))]
-              # From candidates, determine which edge is the most likely fit.
-              edge.candidates <- tri$E[edges,][private$which_vert(set.end.candidates,tri$E[edges,]),]
-              edge.candidate.index <- private$areEdges(edge.candidates,tri$E)
-              end.edge <- tri$E[edge.candidate.index[order(tri$E.beta[edge.candidate.index] * tri$E.dist[edge.candidate.index])[1]],]
-              set.end.index <- which(set %in% end.edge[end.edge %in% set])
-              # Cycle and orient vector to merge with others.
-              set.start <- set[set.start.index]
-              set.end <- set[set.end.index]
-              set <- private$cycle_vector(set,set.start)
-              if(set.end != set[length(set)]){
-                set <- private$cycle_vector(set[length(set):1],set.start)
-              }
-
-              # Figure out which crypt sets to pull.
-              crypt.start <- ceiling((1:length(endpoints))/2)[which(endpoints %in% start.edge[start.edge %in% endpoints])]
-              crypt.end <- ceiling((1:length(endpoints))/2)[which(endpoints %in% end.edge[end.edge %in% endpoints])]
-
-              if(crypt.start == crypt.end){
-                cryptset <- crypts[[crypt.start]]
-                # Reorient cryptset vector
-                if(which(cryptset %in% start.edge) != length(cryptset)){
-                  cryptset <- cryptset[length(cryptset):1]
-                }
-                crypts[[crypt.start]] <- private$cut_open_crypt(c(cryptset,set),img,dist.mean,dist.sd)
-              }else{
-                # Process as per prior splitting method. Expecting two crypts so fixed output.
-                crypt1 <- crypts[[crypt.start]]
-                crypt2 <- crypts[[crypt.end]]
-                # Reorient crypt vectors
-                if(which(crypt1 %in% start.edge) != length(crypt1)){
-                  crypt1 <- crypt1[length(crypt1):1]
-                }
-                if(which(crypt2 %in% end.edge) != 1){
-                  crypt2 <- crypt2[length(crypt2):1]
-                }
-                set <- c(crypt1,set,crypt2,crypt1[1])
-
-                # Copy paste from previous cleaving algorithm. TODO: Try to get into a separate function to modularize.
-                origins <- cc$metadata$OriginCells[cc$metadata$OriginCells %in% set]
-                set <- private$cycle_vector(set,origins[1])
-                cleavepoints <- c()
-                ind_or <- sort(which(set %in% origins))
-                # Looks for cleave points between origins.
-                for(j in 1:(length(ind_or)-1)){
-                  subset <- set[ind_or[j]:ind_or[j+1]]
-                  cut_point <- private$find_cut_point(subset,img,dist.mean,dist.sd)
-                  cleavepoints <- c(cleavepoints,
-                                    which(set==subset[cut_point])[1],
-                                    which(set==subset[cut_point])[1]+1)
-                }
-                # Break loop around first cleavepoint and adjust set vector
-                set <- set[-length(set)]
-                set <- private$cycle_vector(set,set[cleavepoints[2]])
-                cleavepoints <- cleavepoints[-(1:2)]-cleavepoints[1]
-                # Set up paired indices of start and endpoints for each set in a 2-column matrix
-                cleavepoints <- matrix(c(1,cleavepoints,length(set)),ncol=2,byrow=TRUE)
-                set[cleavepoints[j,1]:cleavepoints[j,2]]
-                crypts[[crypt.start]] <- private$list_append(crypts,set[cleavepoints[1,1]:cleavepoints[1,2]])
-                crypts[[crypt.end]] <- private$list_append(crypts,set[cleavepoints[2,1]:cleavepoints[2,2]])
-              }
-            }
+            message(paste0("Cells unable to be assigned to crypts in ",img,", please review results with 'plot_debug' function with 'full_algo_debug = TRUE' argument for more info."))
+            print(paste("Unassigned cells:",paste( unlist(unassigned_sets), collapse= " ")))
           }
+          # # Still experimental, needs testing on real occurrences.
+          # if(length(unassigned_sets)>0){
+          #   message(paste0("Experimental error-correction algorithm used for ",img,", please review results with 'plot_debug'!"))
+          #   print("Crypts:")
+          #   for(i in crypts){print(i)}
+          #   print("Unassigned:")
+          #   for(i in unassigned_sets){print(i)}
+          #   while(!all(unlist(lapply(unassigned_sets,function(x){is.null(x)})))){
+          #
+          #     # First, pull all the endpoints from established crypts.
+          #     endpoints <- c()
+          #     for(i in crypts){
+          #       endpoints <- c(endpoints,i[1],i[length(i)])
+          #     }
+          #
+          #     # Grab set. Looping by nullifying as going through.
+          #     to_grab <- which(!unlist(sapply(unassigned_sets,function(x){is.null(x)})))[1]
+          #     set <- unassigned_sets[[to_grab]]
+          #     if(set[length(set)] == set[1]){
+          #       set <- set[1:(length(set)-1)]
+          #     }
+          #     unassigned_sets[[to_grab]] <- NULL
+          #     # Should extract candidate vertices from set
+          #     testedges <- matrix(c(rep(set,each=length(endpoints)),rep(endpoints,times=length(set))),ncol=2)
+          #     edges <- private$areEdges(testedges,tri$E)
+          #     edges <- edges[edges>0]
+          #     # Picks a start edge based on minimum distance * theta
+          #     start.edge <- tri$E[edges[order(tri$E.beta[edges] * tri$E.dist[edges])[1]],]
+          #     # Pull index from unassigned for start edge
+          #     set.start.index <- which(set %in% start.edge[start.edge %in% set])
+          #     # End point should be adjacent in ordered vector, with looping assumed.
+          #     set.end.candidates <- set[c((length(set) + set.start.index + 1) %% length(set),(length(set) + set.start.index - 1) %% length(set))]
+          #     # From candidates, determine which edge is the most likely fit.
+          #     edge.candidates <- tri$E[edges,][private$which_vert(set.end.candidates,tri$E[edges,]),]
+          #     edge.candidate.index <- private$areEdges(edge.candidates,tri$E)
+          #     end.edge <- tri$E[edge.candidate.index[order(tri$E.beta[edge.candidate.index] * tri$E.dist[edge.candidate.index])[1]],]
+          #     set.end.index <- which(set %in% end.edge[end.edge %in% set])
+          #     # Cycle and orient vector to merge with others.
+          #     set.start <- set[set.start.index]
+          #     set.end <- set[set.end.index]
+          #     set <- private$cycle_vector(set,set.start)
+          #     if(set.end != set[length(set)]){
+          #       set <- private$cycle_vector(set[length(set):1],set.start)
+          #     }
+          #
+          #     # Figure out which crypt sets to pull.
+          #     crypt.start <- ceiling((1:length(endpoints))/2)[which(endpoints %in% start.edge[start.edge %in% endpoints])]
+          #     crypt.end <- ceiling((1:length(endpoints))/2)[which(endpoints %in% end.edge[end.edge %in% endpoints])]
+          #
+          #     if(crypt.start == crypt.end){
+          #       cryptset <- crypts[[crypt.start]]
+          #       # Reorient cryptset vector
+          #       if(which(cryptset %in% start.edge) != length(cryptset)){
+          #         cryptset <- cryptset[length(cryptset):1]
+          #       }
+          #       crypts[[crypt.start]] <- private$cut_open_crypt(c(cryptset,set),img,dist.mean,dist.sd)
+          #     }else{
+          #       # Process as per prior splitting method. Expecting two crypts so fixed output.
+          #       crypt1 <- crypts[[crypt.start]]
+          #       crypt2 <- crypts[[crypt.end]]
+          #       # Reorient crypt vectors
+          #       if(which(crypt1 %in% start.edge) != length(crypt1)){
+          #         crypt1 <- crypt1[length(crypt1):1]
+          #       }
+          #       if(which(crypt2 %in% end.edge) != 1){
+          #         crypt2 <- crypt2[length(crypt2):1]
+          #       }
+          #       set <- c(crypt1,set,crypt2,crypt1[1])
+          #
+          #       # Copy paste from previous cleaving algorithm. TODO: Try to get into a separate function to modularize.
+          #       origins <- cc$metadata$OriginCells[cc$metadata$OriginCells %in% set]
+          #       set <- private$cycle_vector(set,origins[1])
+          #       cleavepoints <- c()
+          #       ind_or <- sort(which(set %in% origins))
+          #       # Looks for cleave points between origins.
+          #       for(j in 1:(length(ind_or)-1)){
+          #         subset <- set[ind_or[j]:ind_or[j+1]]
+          #         cut_point <- private$find_cut_point(subset,img,dist.mean,dist.sd)
+          #         cleavepoints <- c(cleavepoints,
+          #                           which(set==subset[cut_point])[1],
+          #                           which(set==subset[cut_point])[1]+1)
+          #       }
+          #       # Break loop around first cleavepoint and adjust set vector
+          #       set <- set[-length(set)]
+          #       set <- private$cycle_vector(set,set[cleavepoints[2]])
+          #       cleavepoints <- cleavepoints[-(1:2)]-cleavepoints[1]
+          #       # Set up paired indices of start and endpoints for each set in a 2-column matrix
+          #       cleavepoints <- matrix(c(1,cleavepoints,length(set)),ncol=2,byrow=TRUE)
+          #       set[cleavepoints[j,1]:cleavepoints[j,2]]
+          #       crypts[[crypt.start]] <- private$list_append(crypts,set[cleavepoints[1,1]:cleavepoints[1,2]])
+          #       crypts[[crypt.end]] <- private$list_append(crypts,set[cleavepoints[2,1]:cleavepoints[2,2]])
+          #     }
+          #   }
+          # }
 
           # Final processing of crypt vectors and sorting of crypts into CryptObjs and addition to cell database.
           for(v in crypts){
@@ -325,13 +343,14 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
             self$cells[indices,feature] <- i
             self$cells[indices,paste0("Position.",feature)] <- c$pos(self$cells$Index[indices])
           }
+          self$metadata[["algo_debug"]][[img]] <- algo_debug
         },
       error = function(err){message(paste("Error: Unable to process ",img,"\n",err,"\n"))},
       warning = function(w){message(paste("Warning in",img,":",w))})
       }
     },
 
-    plot_debug = function(images,savedir=NA){
+    plot_debug = function( images, savedir=NA, full_algo_debug = FALSE ){
       for(image in images){
         # Load cells of interest
         cc <- self$cells[self$cells$Image==image,]
@@ -357,11 +376,33 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
             dev.new()
             par(mar=c(0,0,1,0))
             plot( x = c( min(cc[,"X"]) - 50, max(cc[,"X"]) + 50), y = c( min(cc[,"Y"]) - 50, max(cc[,"Y"]) + 50), col="white",
-                  axes = FALSE, main = image, bg = "white") +
-              segments( x0 = cc[edges[,1],"X"], y0 = cc[edges[,1],"Y"], x1 = cc[edges[,2],"X"], y1 = cc[edges[,2],"Y"] ) +
-              points( x = cc[,"X"], y = cc[,"Y"], col=factor(cc$Crypt), cex=3, lwd=1, pch=21, bg="white") +
-              text( x = cc[,"X"], y = cc[,"Y"], labels = as.character(abs(cc$Position.Crypt)), pos = 3, offset = 0.06, cex = 0.75) +
-              text( x = cc[,"X"], y = cc[,"Y"], labels = as.character(abs(cc$Index)), pos = 1, offset = 0.09, cex = 0.75)
+                  axes = FALSE, main = image, bg = "white")
+            if(full_algo_debug){
+              # Adds more visual info on algo paring
+              edgeset <- self$CCFiles[[image]]$metadata$triangulation$E
+              debug_sets <- self$metadata$algo_debug[[image]]
+              segments( x0 = cc[edgeset[,1],"X"],
+                        y0 = cc[edgeset[,1],"Y"],
+                        x1 = cc[edgeset[,2],"X"],
+                        y1 = cc[edgeset[,2],"Y"],
+                        lwd = (length(debug_sets) + 2)*1.5, col = "#AAAAAAFF"  )
+              for(i in 1:length(debug_sets)){
+                set <- debug_sets[[i]]
+                segments( x0 = cc[edgeset[set,1],"X"],
+                          y0 = cc[edgeset[set,1],"Y"],
+                          x1 = cc[edgeset[set,2],"X"],
+                          y1 = cc[edgeset[set,2],"Y"],
+                          lwd = (length(debug_sets) + 2 - i)*1.5, col = rainbow(length(debug_sets))[i]  )
+              }
+              legend(x = (min(cc[,"X"]) + max(cc[,"X"]))/2, y = min(cc[,"Y"]) - 25,
+                     fill=c("#AAAAAAFF",rainbow(length(debug_sets)),"#000000FF"), legend = c("Triangulation", names(debug_sets), "Edges"),
+                     xjust = 0.5, horiz = TRUE, cex = 0.5, bty = "n", x.intersp = 0.1)
+            }
+
+            segments( x0 = cc[edges[,1],"X"], y0 = cc[edges[,1],"Y"], x1 = cc[edges[,2],"X"], y1 = cc[edges[,2],"Y"] )
+            points( x = cc[,"X"], y = cc[,"Y"], col=factor(cc$Crypt), cex=3, lwd=1, pch=21, bg="white")
+            text( x = cc[,"X"], y = cc[,"Y"], labels = as.character(abs(cc$Position.Crypt)), pos = 3, offset = 0.06, cex = 0.75)
+            text( x = cc[,"X"], y = cc[,"Y"], labels = as.character(abs(cc$Index)), pos = 1, offset = 0.09, cex = 0.75)
 
             dev.copy(png, paste0(savedir, image," debug plot.png"),
                      width = (max(cc[,"X"]) + 100 - min(cc[,"X"])), height = (max(cc[,"Y"]) + 220 - min(cc[,"Y"])), res=120, type="cairo")
@@ -508,6 +549,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       # key_column : the column name within keydb that contains key information.
       # whichcells : a list of parameters to constrain attribute assignment to, as per self$which_cells function.
       # is.new : If TRUE, will add a metadata entry to parse future entries automatically.
+      #TODO : integrate with add_df
 
       # Input error checking
       if(is.character(keydb)){
@@ -722,9 +764,10 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       return(unique(unlist(lapply(i,function(y){lapply(private$which_vert(y,x),function(z){sum(x[z,])-y})}))))
     },
 
-    which_vert = function(i,x){
+    which_vert = function(i,x,both=FALSE){
       # Returns which vertices in set x contain indices i. Assumes vertices are rows.
-      return(which(rowSums(matrix(x %in% i,ncol=ncol(x)))>0))
+      # Optional parameter both checks whether both verts in edges are in set.
+      return(which(rowSums(matrix(x %in% i,ncol=ncol(x)))>both))
     },
 
     check_looping = function(v){
@@ -972,6 +1015,30 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       cut_point <- private$find_cut_point(v,img,dist.mean,dist.sd)
       v <- c(v[(cut_point+1):(length(v)-1)],v[1:cut_point])
       return(v)
+    },
+
+    path_check = function(edges, origins){
+      # Checks whether all vertices in matrix edges have some pathway to one or more origin vertices
+      # Returns a list of vectors of vertices, connected and disconnected respectively.
+      vertices <- unique(c(edges))
+      vertexcheck <- rep(FALSE,length(vertices))
+      vertexcheck[which(vertices %in% origins)] = TRUE
+      lastsum <- 0
+      while(lastsum < sum(vertexcheck)){
+        lastsum = sum(vertexcheck)
+        vertexcheck[which(vertices %in% unique(c(edges[which_vert(vertices[vertexcheck],edges),])))] = TRUE
+      }
+      return(list("connected" = vertices[vertexcheck],
+                  "disconnected" = vertices[!vertexcheck]))
+    },
+
+    fix_pathing = function(edgeset,subset,origins){
+      # Reconnect disconnected pieces by first getting all affected, edges, then looking for crossover with connected set.
+      checked.verts <- private$path_check(edgeset[subset,],origins)
+      to.reconnect1 <- which_vert(checked.verts$disconnected, edgeset)
+      to.reconnect2 <- which_vert(checked.verts$connected, edgeset)
+      edges.to.reconnect <- to.reconnect1[which(to.reconnect1 %in% to.reconnect2)]
+      return( sort( c( edges.to.reconnect , subset ) ) )
     }
 
   )#,
