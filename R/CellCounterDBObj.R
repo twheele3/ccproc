@@ -51,18 +51,18 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
             for(attribute in names(self$metadata)){
               tryCatch({
               newcells[,attribute] <- factor(
-                private$string_extract(
+                ccproc::string_extract(
                   as.character(newcells[,self$metadata$Attributes[[attribute]]$source_col]),
                   self$metadata$Attributes[[attribute]]$Regex))},
               error = function(err){message(paste("Error in tagging attributes for ",image_name,": ",err))},
               warning = function(w){message(paste("Warning in tagging attributes for ",image_name,": ",w))})
             }
-            newcells$Sample <-factor(private$string_extract(as.character(newcells$Image),self$metadata$SampleRegex)[1])
+            newcells$Sample <-factor(ccproc::string_extract(as.character(newcells$Image),self$metadata$SampleRegex)[1])
           }
           if(all(is.na(self$cells))){
             self$cells <- newcells
           }else{
-            self$cells <- private$rbind_fill(self$cells, newcells)
+            self$cells <- ccproc::rbind_fill(self$cells, newcells)
           }
           # Add new markers to Markers
           self$Markers <- sort(unique(c(self$Markers,cc$Markers)))
@@ -92,7 +92,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       base::saveRDS(self, file = file)
     },
 
-    processFeatures = function(ccfiles="all", which_cells = NA, reprocess=FALSE,feature="Crypt"){
+    processFeatures = function(ccfiles="all", which_cells = NA, reprocess=FALSE,feature="Crypt", debug_output = FALSE){
       # '
       # Process loaded cells into features. Expand in future to non-crypt stuff.
       # '
@@ -136,11 +136,11 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
         tryCatch({
           # Create triangulation for CCFiles that don't have it yet.
           if(!any("triangulation" %in% names(self$CCFiles[[img]]$metadata))){
-            private$create_triangulation(self$CCFiles[[img]])
+            self$CCFiles[[img]] <- ccproc::create_triangulation(self$CCFiles[[img]])
           }
           # Recreate triangulation for CCFiles that have outdated triangulations, based on rowcounts.
           if(nrow(self$CCFiles[[img]]$metadata$triangulation$P) != nrow(self$CCFiles[[img]]$cells)){
-            private$create_triangulation(self$CCFiles[[img]])
+            self$CCFiles[[img]] <- ccproc::create_triangulation(self$CCFiles[[img]])
           }
           # Apply only to subset. useful for excluding mesenchymal cells and whatnot from analysis.
           tri <- self$CCFiles[[img]]$metadata$triangulation
@@ -149,26 +149,26 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
           }else{
             which_cells[["Image"]] = img
             # Returns all of the verts that have both cells
-            E.subset <- private$which_vert(self$cells$Index[self$which_cells(which_cells)],tri$E,both=TRUE)
+            E.subset <- ccproc::which_vert(self$cells$Index[self$which_cells(which_cells)],tri$E,both=TRUE)
           }
           # Dumplist for retained edges after each algo step.
           algo_debug <- list()
           # Commenting out because I think I'm running these too early. Need to be run sequentially after each culling step?
           # # Creates a rolling count of edges for each vector, sorted by distance increasing.
-          # tri$E.dist.roll <- private$rollcount(tri$E.dist[E.subset],tri$E[E.subset,])
+          # tri$E.dist.roll <- ccproc::rollcount(tri$E.dist[E.subset],tri$E[E.subset,])
           # # Creates a rolling count of edges for each vector, sorted by beta increasing.
-          # tri$E.beta.roll <- private$rollcount(tri$E.beta,tri$E)
+          # tri$E.beta.roll <- ccproc::rollcount(tri$E.beta,tri$E)
           # First define a subset of edges (E.subset) based on paring edges where both have more than 3 connections as sorted by distance.
-          E.subset <- E.subset[private$pare_edges_by_rolling(private$rollcount(tri$E.dist[E.subset],tri$E[E.subset,]),connections.max=3)]
+          E.subset <- E.subset[ccproc::pare_edges_by_rolling(ccproc::rollcount(tri$E.dist[E.subset],tri$E[E.subset,]),connections.max=3)]
           algo_debug[["1-dist.roll>3"]] <- E.subset
           # Further refine E.subset by paring edges as sorted by beta.
-          E.subset <- E.subset[private$pare_edges_by_rolling(private$rollcount(tri$E.beta[E.subset],tri$E[E.subset,]),connections.max=2)]
+          E.subset <- E.subset[ccproc::pare_edges_by_rolling(ccproc::rollcount(tri$E.beta[E.subset],tri$E[E.subset,]),connections.max=2)]
           algo_debug[["2-beta.roll>2"]] <- E.subset
           # Removes additional cyclical vectors by determining which edges have vertices both with too many connections.
-          E.subset <- E.subset[private$pare_edges_by_count(tri$E[E.subset,],connections.max=2)]
+          E.subset <- E.subset[ccproc::pare_edges_by_count(tri$E[E.subset,],connections.max=2)]
           algo_debug[["3-edge.count>2"]] <- E.subset
           # Repair any broken pathing
-          E.subset <- private$fix_pathing(edgeset = tri$E, subset = E.subset, origins = self$CCFiles[[img]]$metadata$OriginCells)
+          E.subset <- ccproc::fix_pathing(edgeset = tri$E, subset = E.subset, origins = self$CCFiles[[img]]$metadata$OriginCells)
           algo_debug[["4-fix.path"]] <- E.subset
           # Create an aggregate statistic from normalized distance (shifted to 1 for multiplier effect) and beta.
           dist.mean = mean(tri$E.dist[E.subset])
@@ -177,17 +177,17 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
           # These stats can theoretically be weighted in the future if needed.
           hybrid_stat <- dist.normalized + tri$E.beta[E.subset]
 
-          E.subset <- E.subset[private$pare_edges_by_stat(stat=hybrid_stat, edgeset=tri$E[E.subset,], decreasing=TRUE, connections.max=2)]
+          E.subset <- E.subset[ccproc::pare_edges_by_stat(stat=hybrid_stat, edgeset=tri$E[E.subset,], decreasing=TRUE, connections.max=2)]
           algo_debug[["5-betadist.stat>2"]] <- E.subset
 
           # Final repair and cleanup steps to ensure everything's closed up and connected.
-          E.subset <- private$fix_pathing(edgeset = tri$E, subset = E.subset, origins = self$CCFiles[[img]]$metadata$OriginCells)
+          E.subset <- ccproc::fix_pathing(edgeset = tri$E, subset = E.subset, origins = self$CCFiles[[img]]$metadata$OriginCells)
           algo_debug[["6-fix.path"]] <- E.subset
-          E.subset <- E.subset[private$pare_edges_by_count(tri$E[E.subset,],connections.max=2)]
+          E.subset <- E.subset[ccproc::pare_edges_by_count(tri$E[E.subset,],connections.max=2)]
           algo_debug[["7-edge.count>2"]] <- E.subset
 
           # Sort remaining edges into ordered vectors.
-          ordered_sets <- private$pared_edgeset_to_ordered_vectors(tri$E[E.subset,])
+          ordered_sets <- ccproc::pared_edgeset_to_ordered_vectors(tri$E[E.subset,])
 
           # Break ordered sets into separate crypts by origins.
           crypts <- list()
@@ -196,10 +196,10 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
           for(i in 1:length(ordered_sets)){
             set <- ordered_sets[[i]]
             origins <- self$CCFiles[[img]]$metadata$OriginCells[self$CCFiles[[img]]$metadata$OriginCells %in% set]
-            looping <- private$check_looping(set) & (length(origins) > 0)
+            looping <- ccproc::check_looping(set) & (length(origins) > 0)
             # Detect for looping, reorient to center on first origin.
             if(looping){
-              set <- private$cycle_vector(set,origins[1])
+              set <- ccproc::cycle_vector(set,origins[1])
             }
             cleavepoints <- c()
             ind_or <- sort(which(set %in% origins))
@@ -207,37 +207,39 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
               # Looks for cleave points between origins.
               for(j in 1:(length(ind_or)-1)){
                 subset <- set[ind_or[j]:ind_or[j+1]]
-                cut_point <- private$find_cut_point(subset,img,dist.mean,dist.sd)
+                cut_point <- ccproc::find_cut_point(subset,self$CCFiles[[img]],dist.mean,dist.sd)
                 cleavepoints <- c(cleavepoints,
                                   which(set==subset[cut_point])[1],
                                   which(set==subset[cut_point])[1]+1)
               }
               # Break loop around first cleavepoint and adjust set vector
+              cleavepoints <- sort(cleavepoints)
               set <- set[-length(set)]
-              set <- private$cycle_vector(set,set[cleavepoints[2]])
+              set <- ccproc::cycle_vector(set,set[cleavepoints[2]])
               cleavepoints <- cleavepoints[-(1:2)]-cleavepoints[1]
+
               # Set up paired indices of start and endpoints for each set in a 2-column matrix
               cleavepoints <- matrix(c(1,cleavepoints,length(set)),ncol=2,byrow=TRUE)
               for(j in 1:nrow(cleavepoints)){
                 subset <- set[cleavepoints[j,1]:cleavepoints[j,2]]
                 if(any(origins %in% subset)){
-                  crypts <- private$list_append(crypts,subset)
+                  crypts <- ccproc::list_append(crypts,subset)
                 }else{
-                  unassigned_sets <- private$list_append(unassigned_sets,subset)
+                  unassigned_sets <- ccproc::list_append(unassigned_sets,subset)
                 }
               }
               # If just a single crypt, processing at this step should be done.
             }else if(length(ind_or)==2){
-              crypts <- private$list_append(crypts,set)
+              crypts <- ccproc::list_append(crypts,set)
               # Put left-overs into unassigned.
             }else{
-              unassigned_sets <- private$list_append(unassigned_sets,set)
+              unassigned_sets <- ccproc::list_append(unassigned_sets,set)
             }
           }
 
           # Make crypts loop properly before assigning unassigned.
           for(i in 1:length(crypts)){
-            crypts[[i]] <- private$cut_open_crypt(crypts[[i]],img,dist.mean,dist.sd)
+            crypts[[i]] <- ccproc::cut_open_crypt(crypts[[i]],self$CCFiles[[img]],dist.mean,dist.sd)
           }
 
           # Assign unassigned sets by relinking with separated crypts.
@@ -251,7 +253,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
           for(v in crypts){
             i <- length(self$crypts) + 1
             i0 <- self$CCFiles[[img]]$metadata$OriginCells[self$CCFiles[[img]]$metadata$OriginCells %in% v]
-            c <- ccproc::Crypt$new(origin=i0,cells=v,Image=self$CCFiles[[img]]$metadata$Image_Filename,E.index=private$areEdges(private$vector_to_edges(v),tri$E))
+            c <- ccproc::Crypt$new(origin=i0,cells=v,Image=self$CCFiles[[img]]$metadata$Image_Filename,E.index=ccproc::areEdges(ccproc::vector_to_edges(v),tri$E))
             self$crypts[[i]] <- c
             indices <- self$which_cells(list("Image" = c$Image, "Index" = v))
             self$cells[indices,feature] <- i
@@ -284,7 +286,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
         # Create edges for all cells in crypts.
         edges <- c()
         for(i in unique(cc$Crypt[!is.na(cc$Crypt) & (cc$Crypt > 0)])){
-          edges <- c(edges,t(private$vector_to_edges(self$crypts[[i]]$cells)))
+          edges <- c(edges,t(ccproc::vector_to_edges(self$crypts[[i]]$cells)))
         }
         if(length(edges) > 0){
           edges <- matrix(edges,ncol=2,byrow=TRUE)
@@ -381,7 +383,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
           # Remove old cells from database.
           self$cells = self$cells[!(self$cells$Image==img),]
           # Insert new cells.
-          self$cells <- private$rbind_fill(self$cells, self$CCFiles[[img]]$cells)
+          self$cells <- ccproc::rbind_fill(self$cells, self$CCFiles[[img]]$cells)
           # Alert that some duplicates detected.
           message(paste(i,"duplicate cells merged in",img))
           dupeflag = TRUE
@@ -415,7 +417,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       self$metadata[["Attributes"]][[attribute]] <- list("Regex" = Regex,
                                             "source_col" = source_col)
       self$cells[,attribute] <- factor(
-        private$string_extract(
+        ccproc::string_extract(
           as.character(self$cells[,self$metadata$Attributes[[attribute]]$source_col]),
           self$metadata$Attributes[[attribute]]$Regex))
     },
@@ -430,16 +432,16 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
           img <- as.character(self$crypts[[i]]$Image)
           leftward <- ave(
             self$CCFiles[[img]]$metadata$triangulation$E.dist[
-              private$areEdges(
-                private$vector_to_edges(
+              ccproc::areEdges(
+                ccproc::vector_to_edges(
                   crypt$cells[
                     which(crypt$cells == crypt$origin): 1]),
                 self$CCFiles[[img]]$metadata$triangulation$E)],
             FUN = cumsum)
           rightward <- ave(
             self$CCFiles[[img]]$metadata$triangulation$E.dist[
-              private$areEdges(
-                private$vector_to_edges(
+              ccproc::areEdges(
+                ccproc::vector_to_edges(
                   crypt$cells[
                     which(crypt$cells == crypt$origin):length(crypt$cells)]),
                 self$CCFiles[[img]]$metadata$triangulation$E)],
@@ -459,7 +461,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
         crypt <- self$crypts[[i]]
         if(!is.null(crypt$Image)){
           img <- as.character(self$crypts[[i]]$Image)
-          angles <- pi - private$rolling_angle(crypt$cells,self$CCFiles[[img]])
+          angles <- pi - ccproc::rolling_angle(crypt$cells,self$CCFiles[[img]])
           indices <- self$which_cells(list("Image" = img, "Index" = crypt$cells))
           self$cells[indices,tracecol][order(self$cells[indices,"Index"])] <- angles[order(crypt$cells)]
         }
@@ -605,7 +607,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
           if(is.null(to_return)){
             to_return = to_add
           }else{
-            to_return = private$rbind_fill(to_return, to_add)
+            to_return = ccproc::rbind_fill(to_return, to_add)
           }
         },
         error = function(e){message(paste("Error in aggregate_by_features: ",e))},
@@ -633,337 +635,343 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       norm.y <- base::norm(y,type="2")
       theta <- acos(round(dot.prod / (norm.x * norm.y),digits = 15))
       return(as.numeric(theta))
-    },
-
-    twolines_angle = function(a,b,c,d){
-      # Finds the angle between two lines AB and CD
-      # Assumes that all connect A-B-C-D, with B and C serving as origins for A and D.
-      x <- NaN
-      try(x <- private$angle(a-b,d-c),silent=TRUE)
-      if(is.nan(x)){return(pi)}
-      else{return(x)}
-    },
-
-    rolling_angle = function(v,cc){
-      tryCatch({
-        return(mapply(function(x1,y1,x2,y2,x3,y3,x4,y4){private$twolines_angle(c(x1,y1),c(x2,y2),c(x3,y3),c(x4,y4))},
-                      x1 = cc$cells[v[c(1,1:(length(v)-1))],c("X")],
-                      y1 = cc$cells[v[c(1,1:(length(v)-1))],c("Y")],
-                      x2 = cc$cells[v[c(1:length(v))],c("X")],
-                      y2 = cc$cells[v[c(1:length(v))],c("Y")],
-                      x3 = cc$cells[v[c(2:length(v),length(v)+1)],c("X")],
-                      y3 = cc$cells[v[c(2:length(v),length(v)+1)],c("Y")],
-                      x4 = cc$cells[v[c(3:length(v),length(v)+1,length(v)+2)],c("X")],
-                      y4 = cc$cells[v[c(3:length(v),length(v)+1,length(v)+2)],c("Y")]))},
-        # Including error/warning functions to send back vector of 1s on assumption that supplied v is too short to work.
-        error = function(e){return(rep(1,times=length(v)))},
-        warning = function(w){return(rep(1,times=length(v)))})
-    },
-
-    rolling_dist = function(v,cc){
-      tryCatch({
-        return(mapply(function(x1,y1,x2,y2){sqrt((x1-x2)**2 + (y1-y2)**2)},
-                      x1 = cc$cells[v[c(1:length(v))],c("X")],
-                      y1 = cc$cells[v[c(1:length(v))],c("Y")],
-                      x2 = cc$cells[v[c(2:length(v),length(v)+1)],c("X")],
-                      y2 = cc$cells[v[c(2:length(v),length(v)+1)],c("Y")]))},
-        # Including error/warning functions to send back vector of 1s on assumption that supplied v is too short to work.
-        error = function(e){return(rep(1,times=length(v)))},
-        warning = function(w){return(rep(1,times=length(v)))})
-    },
-
-    cycle_vector = function(v,i){
-      # Cycles vector so that value i is at position 1 (and pos(last) if looped)
-      if(v[1]==i){
-        return(v)
-      }else if(v[1]==v[length(v)]){
-        return(c(v[which(v==i):length(v)],v[2:(which(v==i)-1)],i))
-      }else{
-        return(c(v[which(v==i):length(v)],v[1:(which(v==i)-1)]))
-      }
-    },
-
-    connections = function(i,x){
-      # Returns all vertices in set x connected to vertices i
-      return(unique(unlist(lapply(i,function(y){lapply(private$which_vert(y,x),function(z){sum(x[z,])-y})}))))
-    },
-
-    which_vert = function(i,x,both=FALSE){
-      # Returns which vertices in set x contain indices i. Assumes vertices are rows.
-      # Optional parameter both checks whether both verts in edges are in set.
-      return(which(rowSums(matrix(x %in% i,ncol=ncol(x)))>both))
-    },
-
-    check_looping = function(v){
-      # Determines whether vector loops or not based on if v[1]==v
-      return(v[1]==v[length(v)])
-    },
-
-    list_append = function(list,v){
-      # Robustly appends vector to list as single element, at last position.
-      list[[length(list)+1]] <- v
-      return(list)
-    },
-
-    create_triangulation = function(cc){
-      # Create Delaunay triangulation object from CellCounter object, and modify with additional useful information regarding likely contours.
-      tri <- RTriangle::triangulate(RTriangle::pslg(cc$cells[,c("X","Y")]))
-      # Generate all possible combos of triangles from permutations of Tri$T, which describes all directional connections.
-      tri$T.perm <- rbind(tri$T[,c(1,2,3)],tri$T[,c(1,3,2)],tri$T[,c(2,1,3)],tri$T[,c(2,3,1)],tri$T[,c(3,1,2)],tri$T[,c(3,2,1)])
-      # Generate angle made between points as represented by columns 1-3-2.
-      tri$T.theta <- mapply(function(x1,y1,x2,y2)
-        {as.numeric(acos(round(c(x1,y1)%*%c(x2,y2) / (base::norm(c(x1,y1),type="2") * base::norm(c(x2,y2),type="2")),digits=15)))},
-        cc$cells[tri$T.perm[,1],"X"]-cc$cells[tri$T.perm[,3],"X"],
-        cc$cells[tri$T.perm[,1],"Y"]-cc$cells[tri$T.perm[,3],"Y"],
-        cc$cells[tri$T.perm[,2],"X"]-cc$cells[tri$T.perm[,3],"X"],
-        cc$cells[tri$T.perm[,2],"Y"]-cc$cells[tri$T.perm[,3],"Y"],
-        USE.NAMES = FALSE)
-      # Generate max(theta) for all possible connections to 1,2 above (respect to tri$E).
-      # This represents a beta threshold respective to a beta skeleton.
-      tri$E.beta <- mapply(function(x,y)
-        {max(tri$T.theta[which((tri$T.perm[,1]==x) & (tri$T.perm[,2]==y))])},
-        tri$E[,1],
-        tri$E[,2],
-        USE.NAMES=FALSE)
-      # Generate distance of each edge.
-      tri$E.dist <- mapply(function(x,y){base::sqrt(x**2 + y**2)},
-                           cc$cells[tri$E[,1],"X"]-cc$cells[tri$E[,2],"X"],
-                           cc$cells[tri$E[,1],"Y"]-cc$cells[tri$E[,2],"Y"],
-                           USE.NAMES = FALSE)
-      cc$metadata[["triangulation"]] <- tri
-    },
-
-    string_extract = function(string,regex){
-      # Returns instance of regex match from string.
-      return(base::regmatches(string, base::regexpr(regex, string)))
-    },
-
-    rollcount = function(v.stat,vector_set,decreasing=FALSE){
-      # Gives a rolling count of instances of vertices per vector, sorted by vector statistic v.stat.
-      # Expects v.stat to be a numerical vector of length = rows vector_set. vector_set must be a data.frame or matrix with vectors expressed row-wise.
-      array_flat <- as.vector(t(vector_set[order(v.stat, decreasing=decreasing),]))
-      return(matrix(ave(
-                      rep(TRUE,length(array_flat)),
-                      array_flat,FUN=cumsum),
-                    nrow=nrow(vector_set),
-                    ncol=ncol(vector_set),
-                    byrow=TRUE)[order(order(v.stat, decreasing=decreasing)),])
-    },
-
-    pare_edges_by_rolling = function(rollset, connections.max, threshold=0){
-      # Returns indices of rollset after pruning by a rolling set of connections.
-      # Rollset is a casting of a vector set with connections per vertex ordered by a test stat as per private$rollcount.
-      # Threshold defines the minimum number of connections per vector needed to satisfy test. Must be less than ncol(rollset)
-      return(which(base::rowSums(rollset <= connections.max) > threshold))
-    },
-
-    pare_edges_by_stat = function(stat, edgeset, decreasing=TRUE, connections.max){
-      # Returns indices of edgeset after pruning based on stat and connections.max.
-      # By default retains lowest stat (decreasing=TRUE)
-      indices <- rep(TRUE,nrow(edgeset))
-      too_many <- which(table(as.vector(edgeset))>connections.max)
-      for(i in too_many){
-        to_test <- which(base::rowSums(edgeset==i)>0)
-        to_remove <- order(stat[to_test],decreasing=decreasing)
-        if(length(to_remove)>connections.max){
-          indices[to_test[to_remove[1:(length(to_test)-connections.max)]]] <- FALSE
-        }
-      }
-      return(which(indices))
-    },
-
-    pare_edges_by_count = function(edgeset,connections.max){
-      # Returns indices of edgeset after pruning based on both vertices having more than connections.max.
-      indices <- rep(TRUE,nrow(edgeset))
-      too_many <- which(table(as.vector(edgeset))>connections.max)
-      for(i in too_many){
-        to_test <- private$which_vert(i,edgeset)
-        # Determines indices of vertices that both have too many connections, ergo cutting connection safely.
-        to_remove <- to_test[which(apply(matrix(edgeset[to_test,] %in% too_many,ncol=2,byrow=FALSE),1,FUN=prod)==1)]
-        if(length(to_remove)>0){
-          indices[to_remove] <- FALSE
-        }
-      }
-      return(which(indices))
-    },
-
-    pared_edgeset_to_ordered_vectors = function(edgeset, make_looping=TRUE){
-      # Converts an unordered set of edges to a list of ordered vectors. Assumes that it has been pared down to a linearizable set.
-      # Output is given as looped ordered vectors.
-      ordered_sets <- list()
-      # Start with single connections
-      for(i in which(table(as.vector(edgeset))==1)){
-        # Skip if already part of a set.
-        if(i %in% unlist(ordered_sets)){next}
-        ordered <- c(private$connections(i,edgeset),i)
-        # Works because it should be strictly linear at this point
-        while(!all(private$connections(ordered[1],edgeset) %in% ordered)){
-          to_try <- private$connections(ordered[1],edgeset)
-          if(!all(to_try %in% ordered)){
-            ordered <- append(ordered, to_try[-which(to_try %in% ordered)], after=0)
-          }
-        }
-        # Append first to last to indicate looping. Easier cleanup later.
-        if((ordered[1]!=ordered[length(ordered)]) & make_looping ){
-          ordered <- c(ordered,ordered[1])
-        }
-        ordered_sets[[length(ordered_sets)+1]] <- ordered
-      }
-      # Paring sorted values from set.
-      if(length(ordered_sets) > 0){
-        subset <- (1:nrow(edgeset))[-private$which_vert(unlist(ordered_sets),edgeset)]
-      }else{
-        subset <- 1:nrow(edgeset)
-      }
-      # Grabbing random vectors and creating ordered sets from there.
-      while(length(subset)>0){
-        ordered <- c(edgeset[subset,][1,2],edgeset[subset,][1,1])
-        # Works because it's a directional assessment
-        while(!all(private$connections(ordered[1],edgeset[subset,]) %in% ordered)){
-          to_try <- private$connections(ordered[1],edgeset[subset,])
-          if(!all(to_try %in% ordered)){
-            ordered <- append(ordered, to_try[-which(to_try %in% ordered)], after=0)
-          }
-        }
-        subset <- subset[-private$which_vert(ordered,edgeset[subset,])]
-        #Adding last index to first position as well to indicate looping vector.
-        ordered <- append(ordered,ordered[length(ordered)],after=0)
-        ordered_sets[[length(ordered_sets)+1]] <- ordered
-      }
-      return(ordered_sets)
-    },
-
-    isEdge = function(vector,edgeset){
-      # Returns index of edge formed by vector components in edgeset, or 0 if not in edgeset.
-      tryCatch(
-        {
-          index = (base::rowSums((edgeset==vector[1])+(edgeset==vector[2]))==2)
-          if(any(index)){
-            return(which(index))
-          }
-          else{
-            return(0)
-          }
-        },
-        error = function(e){message("Error in isEdge: vector must be length 2.")},
-        warning = function(w){}
-      )
-    },
-
-    areEdges = function(m,edgeset){
-      # Returns index of edge formed by vector components in each row of matrix m in edgeset, or 0 if not in edgeset.
-      # m is a matrix with 2 columns.
-      # A mapply wrapper for isEdge.
-      tryCatch(
-        {
-          return(mapply(function(v1,v2){private$isEdge(c(v1,v2),edgeset)},
-                        v1=m[,1],
-                        v2=m[,2]))
-        },
-        error = function(e){message("Error in areEdges: Matrix not compatible.")},
-        warning = function(w){}
-      )
-    },
-
-    vector_to_edges = function(v){
-      # Returns a matrix of ordered edges, with edges moving between column 1 to column 2 down through rows.
-      # v is an ordered vector of vertex indices.
-      tryCatch(
-        {
-          return(matrix(c(v[1:(length(v)-1)],v[2:length(v)]),ncol=2))
-        },
-        error = function(e){message("Error in vector_to_edges: Vector not compatible.")},
-        warning = function(w){}
-      )
-    },
-
-    rbind_fill = function(d1,d2){
-      # Returns merged dataframes with empty columns in either filled with NA. Sets column class with priority for d1
-      d1.names <- names(d1)
-      d2.names <- names(d2)
-      d1.names.u <- d1.names[!(d1.names %in% d2.names)]
-      d2.names.u <- d2.names[!(d2.names %in% d1.names)]
-      names.all <- c(d1.names,d2.names.u)
-      d2.class <- sapply(d2, class)
-      for(name in d2.names.u){
-        d1[,name] <- NA
-        if(d2.class[name]=="factor"){
-          d1[,name] <- factor(d1[,name])
-        }else{
-          class(d1[,name]) <- d2.class[name]
-        }
-      }
-      d2[,d1.names.u] <- NA
-      d1.class <- sapply(d1,class)
-      for(name in names.all){
-        if(d1.class[name]=="factor"){
-          d2[,name] <- factor(d2[,name])
-        }else{
-          class(d2[,name]) <- d1.class[name]
-        }
-      }
-      return(rbind(d1,d2))
-    },
-
-    stats_per_feature = function(feature="Crypt"){
-      # TODO: create aggregate stats around specified feature, further functionality, with specified table
-    },
-
-    find_cut_point = function(v,img,dist.mean,dist.sd){
-      # Returns the optimal cut point in an ordered vector
-      # Inputs:
-      # v = ordered vector describing points.
-      # cc = cellcounter object
-      # edges = edges E from a triangulation object
-      # dist.mean = mean distance between points
-      # dist.sd = sd of distance between points
-      cc <- self$CCFiles[[img]]
-      testfwd <- log(1:length(v) + 0.1)
-      testrev <- log(length(v):1 + 0.1)
-      angular_strain <- pi - private$rolling_angle(v,cc)
-      dist_strain <- exp((private$rolling_dist(v,cc)-dist.mean)/dist.sd)
-      # Checks that edges are present in Delaunay triangulation, applies strong penalty if not.
-      edgecheck <- (c(private$areEdges(private$vector_to_edges(v),cc$metadata$triangulation$E),1)==0)*100000
-      test_stat <- testfwd*testrev*angular_strain*angular_strain*dist_strain + edgecheck
-      return(order(test_stat,decreasing=TRUE)[1])
-    },
-
-    cut_open_crypt = function(v,img,dist.mean,dist.sd){
-      i0 <- self$CCFiles[[img]]$metadata$OriginCells[self$CCFiles[[img]]$metadata$OriginCells %in% v]
-      # Cycle vector to origin and make loop.
-      v <- private$cycle_vector(v,i0)
-      if(v[1]!=v[length(v)]){
-        v <- c(v,v[1])
-      }
-      # Test to verify optimal opening point for crypt.
-      cut_point <- private$find_cut_point(v,img,dist.mean,dist.sd)
-      v <- c(v[(cut_point+1):(length(v)-1)],v[1:cut_point])
-      return(v)
-    },
-
-    path_check = function(edges, origins){
-      # Checks whether all vertices in matrix edges have some pathway to one or more origin vertices
-      # Returns a list of vectors of vertices, connected and disconnected respectively.
-      vertices <- unique(c(edges))
-      vertexcheck <- rep(FALSE,length(vertices))
-      vertexcheck[which(vertices %in% origins)] = TRUE
-      lastsum <- 0
-      while(lastsum < sum(vertexcheck)){
-        lastsum = sum(vertexcheck)
-        vertexcheck[which(vertices %in% unique(c(edges[private$which_vert(vertices[vertexcheck],edges),])))] = TRUE
-      }
-      return(list("connected" = vertices[vertexcheck],
-                  "disconnected" = vertices[!vertexcheck]))
-    },
-
-    fix_pathing = function(edgeset,subset,origins){
-      # Reconnect disconnected pieces by first getting all affected, edges, then looking for crossover with connected set.
-      checked.verts <- private$path_check(edgeset[subset,],origins)
-      to.reconnect1 <- private$which_vert(checked.verts$disconnected, edgeset)
-      to.reconnect2 <- private$which_vert(checked.verts$connected, edgeset)
-      edges.to.reconnect <- to.reconnect1[which(to.reconnect1 %in% to.reconnect2)]
-      return( sort( c( edges.to.reconnect , subset ) ) )
     }
+
+    # twolines_angle = function(a,b,c,d){
+    #   # Finds the angle between two lines AB and CD
+    #   # Assumes that all connect A-B-C-D, with B and C serving as origins for A and D.
+    #   x <- NaN
+    #   try(x <- private$angle(a-b,d-c),silent=TRUE)
+    #   if(is.nan(x)){return(pi)}
+    #   else{return(x)}
+    # },
+    #
+    # rolling_angle = function(v,cc){
+    #   tryCatch({
+    #     return(mapply(function(x1,y1,x2,y2,x3,y3,x4,y4){private$twolines_angle(c(x1,y1),c(x2,y2),c(x3,y3),c(x4,y4))},
+    #                   x1 = cc$cells[v[c(1,1:(length(v)-1))],c("X")],
+    #                   y1 = cc$cells[v[c(1,1:(length(v)-1))],c("Y")],
+    #                   x2 = cc$cells[v[c(1:length(v))],c("X")],
+    #                   y2 = cc$cells[v[c(1:length(v))],c("Y")],
+    #                   x3 = cc$cells[v[c(2:length(v),length(v)+1)],c("X")],
+    #                   y3 = cc$cells[v[c(2:length(v),length(v)+1)],c("Y")],
+    #                   x4 = cc$cells[v[c(3:length(v),length(v)+1,length(v)+2)],c("X")],
+    #                   y4 = cc$cells[v[c(3:length(v),length(v)+1,length(v)+2)],c("Y")]))},
+    #     # Including error/warning functions to send back vector of 1s on assumption that supplied v is too short to work.
+    #     error = function(e){return(rep(1,times=length(v)))},
+    #     warning = function(w){return(rep(1,times=length(v)))})
+    # },
+    #
+    # rolling_dist = function(v,cc){
+    #   tryCatch({
+    #     return(mapply(function(x1,y1,x2,y2){sqrt((x1-x2)**2 + (y1-y2)**2)},
+    #                   x1 = cc$cells[v[c(1:length(v))],c("X")],
+    #                   y1 = cc$cells[v[c(1:length(v))],c("Y")],
+    #                   x2 = cc$cells[v[c(2:length(v),length(v)+1)],c("X")],
+    #                   y2 = cc$cells[v[c(2:length(v),length(v)+1)],c("Y")]))},
+    #     # Including error/warning functions to send back vector of 1s on assumption that supplied v is too short to work.
+    #     error = function(e){return(rep(1,times=length(v)))},
+    #     warning = function(w){return(rep(1,times=length(v)))})
+    # },
+    #
+    # cycle_vector = function(v,i){
+    #   # Cycles vector so that value i is at position 1 (and pos(last) if looped)
+    #   if(v[1]==i){
+    #     return(v)
+    #   }else if(v[1]==v[length(v)]){
+    #     return(c(v[which(v==i):length(v)],v[2:(which(v==i)-1)],i))
+    #   }else{
+    #     return(c(v[which(v==i):length(v)],v[1:(which(v==i)-1)]))
+    #   }
+    # },
+    #
+    # connections = function(i,x){
+    #   # Returns all vertices in set x connected to vertices i
+    #   return(unique(unlist(lapply(i,function(y){lapply(private$which_vert(y,x),function(z){sum(x[z,])-y})}))))
+    # },
+    #
+    # which_vert = function(i,x,both=FALSE){
+    #   # Returns which vertices in set x contain indices i. Assumes vertices are rows.
+    #   # Optional parameter both checks whether both verts in edges are in set.
+    #   return(which(rowSums(matrix(x %in% i,ncol=ncol(x)))>both))
+    # },
+    #
+    # check_looping = function(v){
+    #   # Determines whether vector loops or not based on if v[1]==v
+    #   return(v[1]==v[length(v)])
+    # },
+    #
+    # list_append = function(list,v){
+    #   # Robustly appends vector to list as single element, at last position.
+    #   list[[length(list)+1]] <- v
+    #   return(list)
+    # },
+    #
+    # create_triangulation = function(cc){
+    #   # Create Delaunay triangulation object from CellCounter object, and modify with additional useful information regarding likely contours.
+    #   tri <- RTriangle::triangulate(RTriangle::pslg(cc$cells[,c("X","Y")]))
+    #   # Generate all possible combos of triangles from permutations of Tri$T, which describes all directional connections.
+    #   tri$T.perm <- rbind(tri$T[,c(1,2,3)],tri$T[,c(1,3,2)],tri$T[,c(2,1,3)],tri$T[,c(2,3,1)],tri$T[,c(3,1,2)],tri$T[,c(3,2,1)])
+    #   # Generate angle made between points as represented by columns 1-3-2.
+    #   tri$T.theta <- mapply(function(x1,y1,x2,y2)
+    #     {as.numeric(acos(round(c(x1,y1)%*%c(x2,y2) / (base::norm(c(x1,y1),type="2") * base::norm(c(x2,y2),type="2")),digits=15)))},
+    #     cc$cells[tri$T.perm[,1],"X"]-cc$cells[tri$T.perm[,3],"X"],
+    #     cc$cells[tri$T.perm[,1],"Y"]-cc$cells[tri$T.perm[,3],"Y"],
+    #     cc$cells[tri$T.perm[,2],"X"]-cc$cells[tri$T.perm[,3],"X"],
+    #     cc$cells[tri$T.perm[,2],"Y"]-cc$cells[tri$T.perm[,3],"Y"],
+    #     USE.NAMES = FALSE)
+    #   # Generate max(theta) for all possible connections to 1,2 above (respect to tri$E).
+    #   # This represents a beta threshold respective to a beta skeleton.
+    #   tri$E.beta <- mapply(function(x,y)
+    #     {max(tri$T.theta[which((tri$T.perm[,1]==x) & (tri$T.perm[,2]==y))])},
+    #     tri$E[,1],
+    #     tri$E[,2],
+    #     USE.NAMES=FALSE)
+    #   # Generate distance of each edge.
+    #   tri$E.dist <- mapply(function(x,y){base::sqrt(x**2 + y**2)},
+    #                        cc$cells[tri$E[,1],"X"]-cc$cells[tri$E[,2],"X"],
+    #                        cc$cells[tri$E[,1],"Y"]-cc$cells[tri$E[,2],"Y"],
+    #                        USE.NAMES = FALSE)
+    #   cc$metadata[["triangulation"]] <- tri
+    # },
+    #
+    # string_extract = function(string,regex){
+    #   # Returns instance of regex match from string.
+    #   return(base::regmatches(string, base::regexpr(regex, string)))
+    # },
+    #
+    # rollcount = function(v.stat,vector_set,decreasing=FALSE){
+    #   # Gives a rolling count of instances of vertices per vector, sorted by vector statistic v.stat.
+    #   # Expects v.stat to be a numerical vector of length = rows vector_set. vector_set must be a data.frame or matrix with vectors expressed row-wise.
+    #   array_flat <- as.vector(t(vector_set[order(v.stat, decreasing=decreasing),]))
+    #   return(matrix(ave(
+    #                   rep(TRUE,length(array_flat)),
+    #                   array_flat,FUN=cumsum),
+    #                 nrow=nrow(vector_set),
+    #                 ncol=ncol(vector_set),
+    #                 byrow=TRUE)[order(order(v.stat, decreasing=decreasing)),])
+    # },
+    #
+    # pare_edges_by_rolling = function(rollset, connections.max, threshold=0){
+    #   # Returns indices of rollset after pruning by a rolling set of connections.
+    #   # Rollset is a casting of a vector set with connections per vertex ordered by a test stat as per private$rollcount.
+    #   # Threshold defines the minimum number of connections per vector needed to satisfy test. Must be less than ncol(rollset)
+    #   return(which(base::rowSums(rollset <= connections.max) > threshold))
+    # },
+    #
+    # pare_edges_by_stat = function(stat, edgeset, decreasing=TRUE, connections.max){
+    #   # Returns indices of edgeset after pruning based on stat and connections.max.
+    #   # By default retains lowest stat (decreasing=TRUE)
+    #   indices <- rep(TRUE,nrow(edgeset))
+    #   too_many <- which(table(as.vector(edgeset))>connections.max)
+    #   for(i in too_many){
+    #     to_test <- which(base::rowSums(edgeset==i)>0)
+    #     to_remove <- order(stat[to_test],decreasing=decreasing)
+    #     if(length(to_remove)>connections.max){
+    #       indices[to_test[to_remove[1:(length(to_test)-connections.max)]]] <- FALSE
+    #     }
+    #   }
+    #   return(which(indices))
+    # },
+    #
+    # pare_edges_by_count = function(edgeset,connections.max){
+    #   # Returns indices of edgeset after pruning based on both vertices having more than connections.max.
+    #   indices <- rep(TRUE,nrow(edgeset))
+    #   too_many <- which(table(as.vector(edgeset))>connections.max)
+    #   for(i in too_many){
+    #     to_test <- private$which_vert(i,edgeset)
+    #     # Determines indices of vertices that both have too many connections, ergo cutting connection safely.
+    #     to_remove <- to_test[which(apply(matrix(edgeset[to_test,] %in% too_many,ncol=2,byrow=FALSE),1,FUN=prod)==1)]
+    #     if(length(to_remove)>0){
+    #       indices[to_remove] <- FALSE
+    #     }
+    #   }
+    #   return(which(indices))
+    # },
+    #
+    # order_edges = function(edgeset){
+    #   # Returns an edgeset ordered with smaller,larger indices
+    #   return(t(mapply(function(x,y){c(min(x,y),max(x,y))},
+    #                   x=edgeset[,1], y=edgeset[,2])))
+    # },
+    #
+    # next_edge = function(ordered_edges){
+    #   # Returns a list of ordered connections using a sorted edgeset
+    #   return(mapply(function(c2){which(ordered_edges[,1] == c2)}, c2=ordered_edges[,2]))
+    # },
+    #
+    # pared_edgeset_to_ordered_vectors = function(edgeset, make_looping=TRUE){
+    #   # Converts an unordered set of edges to a list of ordered vectors. Assumes that it has been pared down to a linearizable set.
+    #   # Output is given as looped ordered vectors.
+    #
+    #   oedges <- private$order_edges(edgeset)
+    #   if(any(table(oedges)>2) | any(as.integer(names(which(table(oedges[,1])>1))) %in% oedges[,2])){
+    #     return(message("Edge set could not be coerced into ordered vectors."))
+    #   }
+    #   # two tiered sort, by second then first
+    #   oedges <- oedges[order(oedges[,2]),]
+    #   oedges <- oedges[order(oedges[,1]),]
+    #   # Origins of edgesets
+    #   o.edges <- unique(oedges[,1])[which(!(unique(oedges[,1]) %in% unique(oedges[,2])))]
+    #
+    #   # List of connections to next edge
+    #   nextedge <- private$next_edge(oedges)
+    #
+    #   sets <- list()
+    #   for(i in 1:length(o.edges)){
+    #     which.o <- which(oedges[,1] == o.edges[i])
+    #     set <- oedges[which.o[1],1]
+    #     for(j in 1:length(which.o)){
+    #       set <- append(set,oedges[which.o[j],2], after = length(set)*(j==1))
+    #       nextlink <- nextedge[[which.o[j]]]
+    #       while(length(nextlink) == 1){
+    #         to.add <- oedges[nextlink,2]
+    #         set <- append(set,oedges[nextlink,2], after = length(set)*(j==1))
+    #         nextlink <- nextedge[[nextlink]]
+    #       }
+    #     }
+    #     if(make_looping){
+    #       set <- append(set,set[1],after=length(set))
+    #     }
+    #     sets[[i]] <- set
+    #   }
+    #
+    #
+    #   return(sets)
+    # },
+    #
+    # isEdge = function(vector,edgeset){
+    #   # Returns index of edge formed by vector components in edgeset, or 0 if not in edgeset.
+    #   tryCatch(
+    #     {
+    #       index = (base::rowSums((edgeset==vector[1])+(edgeset==vector[2]))==2)
+    #       if(any(index)){
+    #         return(which(index))
+    #       }
+    #       else{
+    #         return(0)
+    #       }
+    #     },
+    #     error = function(e){message("Error in isEdge: vector must be length 2.")},
+    #     warning = function(w){}
+    #   )
+    # },
+    #
+    # areEdges = function(m,edgeset){
+    #   # Returns index of edge formed by vector components in each row of matrix m in edgeset, or 0 if not in edgeset.
+    #   # m is a matrix with 2 columns.
+    #   # A mapply wrapper for isEdge.
+    #   tryCatch(
+    #     {
+    #       return(mapply(function(v1,v2){private$isEdge(c(v1,v2),edgeset)},
+    #                     v1=m[,1],
+    #                     v2=m[,2]))
+    #     },
+    #     error = function(e){message("Error in areEdges: Matrix not compatible.")},
+    #     warning = function(w){}
+    #   )
+    # },
+    #
+    # vector_to_edges = function(v){
+    #   # Returns a matrix of ordered edges, with edges moving between column 1 to column 2 down through rows.
+    #   # v is an ordered vector of vertex indices.
+    #   tryCatch(
+    #     {
+    #       return(matrix(c(v[1:(length(v)-1)],v[2:length(v)]),ncol=2))
+    #     },
+    #     error = function(e){message("Error in vector_to_edges: Vector not compatible.")},
+    #     warning = function(w){}
+    #   )
+    # },
+    #
+    # rbind_fill = function(d1,d2){
+    #   # Returns merged dataframes with empty columns in either filled with NA. Sets column class with priority for d1
+    #   d1.names <- names(d1)
+    #   d2.names <- names(d2)
+    #   d1.names.u <- d1.names[!(d1.names %in% d2.names)]
+    #   d2.names.u <- d2.names[!(d2.names %in% d1.names)]
+    #   names.all <- c(d1.names,d2.names.u)
+    #   d2.class <- sapply(d2, class)
+    #   for(name in d2.names.u){
+    #     d1[,name] <- NA
+    #     if(d2.class[name]=="factor"){
+    #       d1[,name] <- factor(d1[,name])
+    #     }else{
+    #       class(d1[,name]) <- d2.class[name]
+    #     }
+    #   }
+    #   d2[,d1.names.u] <- NA
+    #   d1.class <- sapply(d1,class)
+    #   for(name in names.all){
+    #     if(d1.class[name]=="factor"){
+    #       d2[,name] <- factor(d2[,name])
+    #     }else{
+    #       class(d2[,name]) <- d1.class[name]
+    #     }
+    #   }
+    #   return(rbind(d1,d2))
+    # },
+    #
+    # stats_per_feature = function(feature="Crypt"){
+    #   # TODO: create aggregate stats around specified feature, further functionality, with specified table
+    # },
+    #
+    # find_cut_point = function(v,img,dist.mean,dist.sd){
+    #   # Returns the optimal cut point in an ordered vector
+    #   # Inputs:
+    #   # v = ordered vector describing points.
+    #   # cc = cellcounter object
+    #   # edges = edges E from a triangulation object
+    #   # dist.mean = mean distance between points
+    #   # dist.sd = sd of distance between points
+    #   v <- as.integer(unlist(v))
+    #   cc <- self$CCFiles[[img]]
+    #   testfwd <- log(1:length(v) + 0.1)
+    #   testrev <- log(length(v):1 + 0.1)
+    #   angular_strain <- pi - private$rolling_angle(v,cc)
+    #   dist_strain <- exp((private$rolling_dist(v,cc)-dist.mean)/dist.sd)
+    #   # Checks that edges are present in Delaunay triangulation, applies strong penalty if not.
+    #   edgecheck <- (c(private$areEdges(private$vector_to_edges(v),cc$metadata$triangulation$E),1)==0)*100000
+    #   test_stat <- testfwd*testrev*angular_strain*angular_strain*dist_strain + edgecheck
+    #   return(order(test_stat,decreasing=TRUE)[1])
+    # },
+    #
+    # cut_open_crypt = function(v,img,dist.mean,dist.sd){
+    #   i0 <- self$CCFiles[[img]]$metadata$OriginCells[self$CCFiles[[img]]$metadata$OriginCells %in% v]
+    #   # Cycle vector to origin and make loop.
+    #   v <- private$cycle_vector(v,i0)
+    #   if(v[1]!=v[length(v)]){
+    #     v <- c(v,v[1])
+    #   }
+    #   # Test to verify optimal opening point for crypt.
+    #   cut_point <- private$find_cut_point(v,img,dist.mean,dist.sd)
+    #   v <- c(v[(cut_point+1):(length(v)-1)],v[1:cut_point])
+    #   return(v)
+    # },
+    #
+    # path_check = function(edges, origins){
+    #   # Checks whether all vertices in matrix edges have some pathway to one or more origin vertices
+    #   # Returns a list of vectors of vertices, connected and disconnected respectively.
+    #   vertices <- unique(c(edges))
+    #   vertexcheck <- rep(FALSE,length(vertices))
+    #   vertexcheck[which(vertices %in% origins)] = TRUE
+    #   lastsum <- 0
+    #   while(lastsum < sum(vertexcheck)){
+    #     lastsum = sum(vertexcheck)
+    #     vertexcheck[which(vertices %in% unique(c(edges[private$which_vert(vertices[vertexcheck],edges),])))] = TRUE
+    #   }
+    #   return(list("connected" = vertices[vertexcheck],
+    #               "disconnected" = vertices[!vertexcheck]))
+    # },
+    #
+    # fix_pathing = function(edgeset,subset,origins){
+    #   # Reconnect disconnected pieces by first getting all affected, edges, then looking for crossover with connected set.
+    #   checked.verts <- private$path_check(edgeset[subset,],origins)
+    #   to.reconnect1 <- private$which_vert(checked.verts$disconnected, edgeset)
+    #   to.reconnect2 <- private$which_vert(checked.verts$connected, edgeset)
+    #   edges.to.reconnect <- to.reconnect1[which(to.reconnect1 %in% to.reconnect2)]
+    #   return( sort( c( edges.to.reconnect , subset ) ) )
+    # }
 
   )#,
   # active = list(
