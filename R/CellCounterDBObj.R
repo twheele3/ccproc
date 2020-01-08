@@ -246,7 +246,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
           # Removed, too unstable. Just adding simple reporter.
           if(length(unassigned_sets)>0){
             message(paste0("Cells unable to be assigned to crypts in ",img,", please review results with 'plot_debug' function with 'full_algo_debug = TRUE' argument for more info."))
-            print(paste("Unassigned cells:",paste( unlist(unassigned_sets), collapse= " ")))
+            print(paste("Unassigned cells:",paste( unique(unlist(unassigned_sets)), collapse= " ")))
           }
 
           # Final processing of crypt vectors and sorting of crypts into CryptObjs and addition to cell database.
@@ -535,7 +535,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       }
     },
 
-    aggregate_by_feature = function(group.by,measure.by,melt.data=TRUE){
+    aggregate_by_feature = function(group.by,measure.by,melt.data=TRUE,whichcells=NA){
       # Uses table functions to aggregate data into a dataframe by grouping attributes
 
       ### Fcn Start
@@ -546,15 +546,17 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
         return(message(paste("Error in aggregate_by_feature: Specified column names not found in cells dataframe: ",
                              c(all.by)[!(c(all.by) %in% colnames(self$cells))])))
       }
-
-      val.table <- table(self$cells[,all.by])
+      if(is.list(whichcells)){
+        indices <- self$which_cells(whichcells)
+      }else{indices <- 1:nrow(self$cells)}
+      val.table <- table(self$cells[indices,all.by])
       val.key <- which(rep(
         data.frame(margin.table( val.table, 1:length(group.by) ))$Freq > 0,
         times=(2**length(measure.by))
       ))
       val.df <- data.frame(val.table)[val.key,]
       ratio.df <- data.frame(prop.table( val.table, which(group.by %in% all.by) ))[val.key,]
-      val.df[, paste(c("ratio.vs",group.by), collapse = "." ) ] <- ratio.df$Freq
+      val.df[, "Fraction" ] <- ratio.df$Freq
       colnames(val.df)[which(colnames(val.df)=="Freq")] <- "Count"
       colnames(val.df)[1:length(all.by)] <- all.by
 
@@ -588,7 +590,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       return(val.df)
     },
 
-    aggregate_by_features = function(group.by, measure.by, melt.data=TRUE){
+    aggregate_by_features = function(group.by, measure.by, melt.data=TRUE, whichcells = NA){
       # Aggregates data based on grouping variables, using a list of features or markers to measure by.
       # Wrapper for self$aggregate_by_feature
       if(any(!(c(group.by,unlist(measure.by)) %in% colnames(self$cells)))){
@@ -603,7 +605,7 @@ CellCounterDB <-  R6Class('CellCounterDatabaseObj',
       for(i in 1:length(measure.by)){
         to_add <- NULL
         tryCatch({
-          to_add <- self$aggregate_by_feature(group.by, measure.by[[i]], melt.data)
+          to_add <- self$aggregate_by_feature(group.by, measure.by[[i]], melt.data, whichcells)
           if(is.null(to_return)){
             to_return = to_add
           }else{

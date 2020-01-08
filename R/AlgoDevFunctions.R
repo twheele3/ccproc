@@ -222,9 +222,9 @@ pared_edgeset_to_ordered_vectors <- function(edgeset, make_looping=TRUE){
     sides <- indices %% 2
     rownum <- ceiling(indices/2)
     sets[[rownum[1]]] <- c(sets[[rownum[1]]][abs(1:length(sets[[rownum[1]]]) -
-                                                   (sides[1]==0)*(1+length(sets[[rownum[1]]])))],
+                                                   (sides[1]==1)*(1+length(sets[[rownum[1]]])))],
                            sets[[rownum[2]]][abs(1:length(sets[[rownum[2]]]) -
-                                                   sides[2]*(1+length(sets[[rownum[2]]])) )][2:length(sets[[rownum[2]]])])
+                                                   (sides[2]==0)*(1+length(sets[[rownum[2]]])) )][2:length(sets[[rownum[2]]])])
     ends[rownum[1],] <- sets[[rownum[1]]][c(1,length(sets[[rownum[1]]]))]
     sets[[rownum[2]]] <- NULL
     ends <- matrix(c(ends[-rownum[2],]),ncol=2)

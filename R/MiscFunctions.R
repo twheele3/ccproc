@@ -11,7 +11,7 @@
 #
 #
 
-blind_files <- function( source_dir, output_dir = NA, title_header = "BLIND", overwrite_names = FALSE ){
+blind_files <- function( source_dir, output_dir = NA, key_dir = NA, title_header = "BLIND", overwrite_names = FALSE ){
   #'@title blind_files
   #'@description Creates blinded versions of all files in a source directory, using a title header and timestamp to create unique filenames. Additionally generates a blinding key alongside output files.
   #'@param source_dir The directory where files to be blinded are located.
@@ -20,10 +20,17 @@ blind_files <- function( source_dir, output_dir = NA, title_header = "BLIND", ov
   #'@param overwrite_names (Optional) Overwrites filenames in-place with blinded names. Disabled by default.
   #'@return A system message confirming
   if(is.na(output_dir) | overwrite_names){ output_dir = source_dir }
+  if(is.na(key_dir)){ key_dir = output_dir }
   if(is.character(output_dir)){
     if(!dir.exists(output_dir)){
       tryCatch({dir.create(output_dir)},
                error = function(err){message(paste0("Could not create directory: ",output_dir,"/n",err,"/n"))})
+    }
+  }
+  if(is.character(key_dir)){
+    if(!dir.exists(key_dir)){
+      tryCatch({dir.create(key_dir)},
+               error = function(err){message(paste0("Could not create directory: ",key_dir,"/n",err,"/n"))})
     }
   }
   filenames <- list.files(path = source_dir)
@@ -32,14 +39,14 @@ blind_files <- function( source_dir, output_dir = NA, title_header = "BLIND", ov
   blindnum <- format(Sys.time(), "%s")
   blindnames <- paste0(title_header,"-",blindnum,"-",blindkey,".", filetypes)
   blindkeydf <- cbind("key" = blindnames, "Original File" = filenames)
-  write.csv(blindkeydf, file = paste0(output_dir,"\\",title_header,"-",blindnum," Blinding Key.csv"),row.names=FALSE)
+  write.csv(blindkeydf, file = paste0(key_dir,"\\",title_header,"-",blindnum," Blinding Key.csv"),row.names=FALSE)
   if(overwrite_names){
     file.rename(from = paste0(source_dir,"\\",filenames), to = paste0(output_dir,"\\",blindnames))
   }else{
     file.copy(from = paste0(source_dir,"\\",filenames), to = paste0(output_dir,"\\",blindnames))
   }
   return(message(paste0("Files in \"", source_dir, "\" have been blinded to ",title_header,"-",blindnum,"-## in ",c(paste0("\"",output_dir,"\"."), "place.")[1+overwrite_names],
-                        "\n", "Blinding key path: \"",paste0(output_dir,"\\",title_header,"-",blindnum," Blinding Key.csv"),"\"")))
+                        "\n", "Blinding key saved to: \"",paste0(key_dir,"/",title_header,"-",blindnum," Blinding Key.csv"),"\"")))
 }
 
 add_columns_with_key = function(df, key_column, keydb, keydb_column = "key", which_rows = NA){
