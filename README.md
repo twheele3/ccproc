@@ -1,9 +1,9 @@
 
-## CCPROC Introduction:
-'ccproc' is a feature detection package that is designed for use with the Fiji Cell Counter plugin (v3.0.0+) to streamline data processing and auditing for images of structured tissue. The basic idea underlying this package is that technicians can visually inspect and score cells and markers in a structured system using an intuitive and simple plugin, to generate files which can be processed quickly into discrete data for further analysis. This can eliminate a lot of time spent switching back and forth between spreadsheets, and aid in reproducibility and auditing by allowing users to save and load marking files for inspection and correction. This processing also produces data that can be further processed using advanced data parameterization techniques, increasing the threshold of analysis rigor in classically lower-rigor systems without significantly increasing workload.
+## CryptCount Introduction:
+CryptCount (ccproc) is an R-based package designed for counting crypt cross-sections using the Fiji Cell Counter plugin (v3.0.0+). Its purpose is to streamline data processing and auditing of crypt images. The basic idea underlying this package is that userss can visually inspect and score cells and markers in crypts using an intuitive and simple plugin that generates annotation files which can be processed into discrete data for further analysis. This can eliminate a lot of time spent switching back and forth between spreadsheets, and aids in reproducibility and auditing by allowing users to save and load files for inspection and correction. This processing also produces data that can be further processed using advanced data parameterization techniques, increasing the threshold of analysis rigor in classically lower-rigor systems without significantly increasing workload.
 
 ## Installation
-This package can be installed most easily by using the 'devtools' package to compile the 'twheele3/ccproc' package from github.
+At present, this package can be installed most easily by using the 'devtools' package to compile the 'twheele3/ccproc' package from github.
 
 #### Note: if you run this chunk, you may need to restart R to clear errors that may occur later.
 
